@@ -78,10 +78,8 @@ import {
     TransitionItem,
     TextItem,
     SoundDesignData,
-    CastingData,
 } from './types';
 import { SoundDesignModule } from './components/SoundDesignModule';
-import { CastingAssistant } from './components/CastingAssistant';
 import { VisualProgressTracker } from './components/VisualProgressTracker';
 import { StoryIdeation } from './components/StoryIdeation';
 import { ErrorBoundary } from './components/ErrorBoundary';
@@ -1693,8 +1691,6 @@ interface VisualSequenceEditorProps {
     setStyles: React.Dispatch<React.SetStateAction<Record<string, 'cinematic' | 'explainer'>>>;
     soundDesignData: Record<string, SoundDesignData>;
     setSoundDesignData: React.Dispatch<React.SetStateAction<Record<string, SoundDesignData>>>;
-    castingData: Record<string, CastingData>;
-    setCastingData: React.Dispatch<React.SetStateAction<Record<string, CastingData>>>;
     deleteTimelineItem: (id: string) => void;
 }
 
@@ -1757,11 +1753,9 @@ interface SelectedItemPanelProps {
     setAspectRatios: React.Dispatch<React.SetStateAction<Record<string, string>>>;
     styles: Record<string, 'cinematic' | 'explainer'>;
     setStyles: React.Dispatch<React.SetStateAction<Record<string, 'cinematic' | 'explainer'>>>;
-    // Sound Design & Casting Props
+    // Sound Design Props
     soundDesignData: Record<string, SoundDesignData>;
     setSoundDesignData: React.Dispatch<React.SetStateAction<Record<string, SoundDesignData>>>;
-    castingData: Record<string, CastingData>;
-    setCastingData: React.Dispatch<React.SetStateAction<Record<string, CastingData>>>;
 }
 
 
@@ -1769,9 +1763,9 @@ const SelectedItemPanel: React.FC<SelectedItemPanelProps> = ({
     item, updateItem, onEnhance, onRevert, onGenerateImage, onGenerateVideoPrompt, generatedContent,
     compositions, lightingData, colorGradingData, cameraMovement, updateVisuals, updatePromptFromVisuals,
     aspectRatios, setAspectRatios, styles, setStyles,
-    soundDesignData, setSoundDesignData, castingData, setCastingData
+    soundDesignData, setSoundDesignData
 }) => {
-    const [activeVisualTab, setActiveVisualTab] = useState<'composition' | 'lighting' | 'color' | 'camera' | 'sound' | 'casting'>('composition');
+    const [activeVisualTab, setActiveVisualTab] = useState<'composition' | 'lighting' | 'color' | 'camera' | 'sound'>('composition');
     const [imageView, setImageView] = useState<'photoreal' | 'stylized'>('photoreal');
     const [isUpdatingPrompt, setIsUpdatingPrompt] = useState(false);
     const [copiedModel, setCopiedModel] = useState<string | null>(null);
@@ -2199,7 +2193,7 @@ const SelectedItemPanel: React.FC<SelectedItemPanelProps> = ({
                     </button>
                  </div>
                  <div className="flex items-center space-x-2 mb-2 border-b border-gray-800 overflow-x-auto">
-                    {(['composition', 'lighting', 'color', 'camera', 'sound', 'casting'] as const).map(tab => (
+                    {(['composition', 'lighting', 'color', 'camera', 'sound'] as const).map(tab => (
                         <button key={tab} onClick={() => setActiveVisualTab(tab)} className={`px-4 py-2 text-sm capitalize rounded-t-lg transition-colors whitespace-nowrap ${activeVisualTab === tab ? 'bg-gray-800 text-amber-400' : 'text-gray-400 hover:bg-gray-900'}`}>
                             {tab}
                         </button>
@@ -2230,13 +2224,6 @@ const SelectedItemPanel: React.FC<SelectedItemPanelProps> = ({
                                 setSoundDesignData(prev => ({ ...prev, [item.id]: data }));
                             }}
                         />}
-                        {activeVisualTab === 'casting' && <CastingAssistant
-                            characters={visualData.composition.characters.map(c => c.name)}
-                            sceneDescription={shotData.description}
-                            onCastingDataUpdate={(data) => {
-                                setCastingData(prev => ({ ...prev, [item.id]: data }));
-                            }}
-                        />}
                     </motion.div>
                 </AnimatePresence>
             </div>
@@ -2262,8 +2249,6 @@ const VisualSequenceEditor: React.FC<VisualSequenceEditorProps> = (props) => {
         setStyles,
         soundDesignData,
         setSoundDesignData,
-        castingData,
-        setCastingData,
         deleteTimelineItem,
     } = props;
     
@@ -2724,9 +2709,7 @@ const VisualSequenceEditor: React.FC<VisualSequenceEditorProps> = (props) => {
                                 setStyles={setStyles}
                                 soundDesignData={soundDesignData}
                                 setSoundDesignData={setSoundDesignData}
-                                castingData={castingData}
-                                setCastingData={setCastingData}
-                           />
+                            />
                         ) : (
                             <div className="flex-grow flex items-center justify-center text-gray-500 bg-gray-950/70 border border-gray-800 rounded-xl">
                                 <p className="text-lg">Select an item on the timeline to begin.</p>
@@ -2997,9 +2980,8 @@ export default function App() {
     const [aspectRatios, setAspectRatios] = useState<Record<string, string>>({});
     const [styles, setStyles] = useState<Record<string, 'cinematic' | 'explainer'>>({});
     
-    // Sound Design & Casting State
+    // Sound Design State
     const [soundDesignData, setSoundDesignData] = useState<Record<string, SoundDesignData>>({});
-    const [castingData, setCastingData] = useState<Record<string, CastingData>>({});
     const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
     const [isLoadingProgress, setIsLoadingProgress] = useState(true);
 
@@ -3702,8 +3684,6 @@ export default function App() {
             setStyles={setStyles}
             soundDesignData={soundDesignData}
             setSoundDesignData={setSoundDesignData}
-            castingData={castingData}
-            setCastingData={setCastingData}
             deleteTimelineItem={deleteTimelineItem}
             showCollaboration={false}
             setShowCollaboration={() => {}}

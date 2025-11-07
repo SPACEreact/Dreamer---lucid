@@ -17,16 +17,18 @@ export const CollaborationDashboard: React.FC<CollaborationDashboardProps> = ({ 
 
   const moduleIcons = {
     sound: Music,
-    casting: Users,
     visual: Camera
-  };
+  } as const;
 
   const typeColors = {
     sync: 'bg-green-900/20 border-green-700/30 text-green-400',
-    contrast: 'bg-yellow-900/20 border-yellow-700/30 text-yellow-400',
-    enhance: 'bg-blue-900/20 border-blue-700/30 text-blue-400',
-    balance: 'bg-purple-900/20 border-purple-700/30 text-purple-400'
-  };
+    enhance: 'bg-blue-900/20 border-blue-700/30 text-blue-400'
+  } as const;
+
+  const suggestionIcons = {
+    sync: TrendingUp,
+    enhance: Palette
+  } as const;
 
   return (
     <motion.div
@@ -127,17 +129,17 @@ export const CollaborationDashboard: React.FC<CollaborationDashboardProps> = ({ 
             {suggestions.length > 0 ? (
               <div className="space-y-3">
                 {suggestions.map((suggestion, index) => {
-                  const TypeIcon = suggestion.type === 'sync' ? TrendingUp : 
-                                 suggestion.type === 'contrast' ? AlertCircle :
-                                 suggestion.type === 'balance' ? Users : Palette;
+                  const TypeIcon = suggestionIcons[suggestion.type as keyof typeof suggestionIcons] || AlertCircle;
                   
+                  const colorClasses = typeColors[suggestion.type as keyof typeof typeColors] || 'bg-gray-800/50 border-gray-700 text-gray-300';
+
                   return (
                     <motion.div
                       key={index}
                       initial={{ opacity: 0, x: -20 }}
                       animate={{ opacity: 1, x: 0 }}
                       transition={{ delay: index * 0.1 }}
-                      className={`p-3 rounded-lg border ${typeColors[suggestion.type]}`}
+                      className={`p-3 rounded-lg border ${colorClasses}`}
                     >
                       <div className="flex items-start space-x-3">
                         <TypeIcon className="w-4 h-4 mt-1 flex-shrink-0" />
@@ -176,7 +178,7 @@ export const CollaborationDashboard: React.FC<CollaborationDashboardProps> = ({ 
             
             {insights.length > 0 ? (
               <div className="space-y-4">
-                {['sound', 'casting', 'visual'].map(module => {
+                {(['sound', 'visual'] as const).map(module => {
                   const moduleInsights = insights.filter(i => i.module === module);
                   if (moduleInsights.length === 0) return null;
                   

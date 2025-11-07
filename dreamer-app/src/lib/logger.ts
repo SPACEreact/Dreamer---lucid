@@ -170,6 +170,5 @@ export const appLogger = logger.service('App');
 export const geminiLogger = logger.service('GeminiService');
 export const imageLogger = logger.service('ImageGeneration');
 export const soundLogger = logger.service('SoundDesign');
-export const castingLogger = logger.service('CastingAssistant');
 export const supabaseLogger = logger.service('SupabaseService');
 export const hugfaceLogger = logger.service('HuggingFaceService');
