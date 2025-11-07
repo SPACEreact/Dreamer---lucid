@@ -193,9 +193,31 @@ const AI_MODELS: AIModel[] = [
 ];
 
 // Format prompt for different AI models
-const formatPromptForModel = (shot: any, model: AIModel): string => {
-  const basePrompt = `${shot.shotDetails.shotType} ${shot.shotDetails.cameraAngle}. ${shot.shotDetails.description}. ${shot.shotDetails.lightingMood} lighting. ${shot.shotDetails.cameraMovement} camera movement.`;
-  
+const formatPromptForModel = (promptSource: any, model: AIModel): string => {
+  let basePrompt = '';
+
+  if (typeof promptSource === 'string') {
+    basePrompt = promptSource;
+  } else if (promptSource?.shotDetails) {
+    const details = promptSource.shotDetails;
+    const segments = [
+      `${details?.shotType ?? ''} ${details?.cameraAngle ?? ''}`.trim(),
+      details?.description ?? '',
+      `${details?.lightingMood ?? ''} lighting`.trim(),
+      `${details?.cameraMovement ?? ''} camera movement`.trim()
+    ].filter(Boolean);
+    basePrompt = segments.join('. ').trim();
+    if (basePrompt && !basePrompt.endsWith('.')) {
+      basePrompt = `${basePrompt}.`;
+    }
+  } else if (typeof promptSource === 'object' && typeof promptSource?.prompt === 'string') {
+    basePrompt = promptSource.prompt;
+  }
+
+  if (!basePrompt) {
+    return '';
+  }
+
   switch (model.id) {
     case 'midjourney':
     case 'bluewillow':
@@ -1721,6 +1743,27 @@ const SelectedItemPanel: React.FC<SelectedItemPanelProps> = ({
     const [isUpdatingPrompt, setIsUpdatingPrompt] = useState(false);
     const [copiedModel, setCopiedModel] = useState<string | null>(null);
     const [showCopyMenu, setShowCopyMenu] = useState(false);
+    const copyMenuRef = useRef<HTMLDivElement | null>(null);
+
+    useEffect(() => {
+        if (!showCopyMenu) return;
+
+        const handleClickOutside = (event: MouseEvent) => {
+            if (copyMenuRef.current && !copyMenuRef.current.contains(event.target as Node)) {
+                setShowCopyMenu(false);
+            }
+        };
+
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => {
+            document.removeEventListener('mousedown', handleClickOutside);
+        };
+    }, [showCopyMenu]);
+
+    useEffect(() => {
+        setShowCopyMenu(false);
+        setCopiedModel(null);
+    }, [item.id, item.type]);
 
     const handleUpdatePromptFromVisuals = async () => {
         setIsUpdatingPrompt(true);
@@ -1743,14 +1786,101 @@ const SelectedItemPanel: React.FC<SelectedItemPanelProps> = ({
     };
 
     if (item.type !== 'shot') {
+        const isPromptItem = item.type === 'b-roll';
+
         return (
-            <div className="flex-grow flex flex-col p-4 bg-gray-950 border border-gray-800 rounded-lg">
-                 <h2 className="text-xl font-semibold text-amber-400 mb-2">
+            <div className="flex-grow flex flex-col p-4 bg-gray-950 border border-gray-800 rounded-lg space-y-4">
+                <h2 className="text-xl font-semibold text-amber-400">
                     {item.type === 'b-roll' ? 'B-Roll Shot' : item.type === 'transition' ? 'Transition Note' : 'Title Card'}
                 </h2>
-                {item.type === 'b-roll' && <textarea value={item.prompt} onChange={e => updateItem({...item, prompt: e.target.value})} className="w-full flex-grow bg-gray-900 rounded p-2 text-gray-300"/>}
-                {item.type === 'transition' && <textarea value={item.note} onChange={e => updateItem({...item, note: e.target.value})} className="w-full flex-grow bg-gray-900 rounded p-2 text-gray-300"/>}
-                {item.type === 'text' && <textarea value={item.title} onChange={e => updateItem({...item, title: e.target.value})} className="w-full flex-grow bg-gray-900 rounded p-2 text-gray-300"/>}
+
+                {isPromptItem && (
+                    <div className="flex flex-col md:flex-row md:items-start gap-4">
+                        <textarea
+                            value={item.prompt}
+                            onChange={e => updateItem({ ...item, prompt: e.target.value })}
+                            className="w-full md:flex-1 bg-gray-900 rounded p-3 text-gray-300 min-h-[160px]"
+                        />
+                        <div className="md:w-56 w-full flex md:block justify-end">
+                            <div className="relative w-full md:w-auto" ref={copyMenuRef}>
+                                <motion.button
+                                    whileHover={{ scale: 1.02 }}
+                                    whileTap={{ scale: 0.98 }}
+                                    onClick={() => setShowCopyMenu(prev => !prev)}
+                                    className="w-full md:w-auto px-3 py-2 text-sm rounded-lg bg-blue-500/20 text-blue-300 border border-blue-500/40 hover:bg-blue-500/30 flex items-center justify-center space-x-2"
+                                >
+                                    <ExternalLink className="w-4 h-4" />
+                                    <span>AI Models</span>
+                                    <ChevronDown className={`w-4 h-4 transition-transform ${showCopyMenu ? 'rotate-180' : ''}`} />
+                                </motion.button>
+
+                                <AnimatePresence>
+                                    {showCopyMenu && (
+                                        <motion.div
+                                            initial={{ opacity: 0, y: -4 }}
+                                            animate={{ opacity: 1, y: 0 }}
+                                            exit={{ opacity: 0, y: -4 }}
+                                            className="absolute right-0 top-full mt-2 w-64 bg-gray-900 border border-gray-700 rounded-lg shadow-xl z-50 max-h-80 overflow-y-auto"
+                                        >
+                                            <div className="p-3 border-b border-gray-700">
+                                                <p className="text-xs text-gray-300 font-medium">Copy for AI Image Generation</p>
+                                            </div>
+                                            {AI_MODELS.map(model => (
+                                                <motion.button
+                                                    key={model.id}
+                                                    whileHover={{ backgroundColor: 'rgba(55, 65, 81, 0.5)' }}
+                                                    onClick={async () => {
+                                                        const formattedPrompt = formatPromptForModel(item.prompt, model);
+                                                        if (!formattedPrompt) {
+                                                            return;
+                                                        }
+                                                        await navigator.clipboard.writeText(formattedPrompt);
+                                                        setCopiedModel(model.id);
+                                                        setTimeout(() => setCopiedModel(null), 1500);
+                                                        setShowCopyMenu(false);
+                                                    }}
+                                                    className="w-full px-4 py-3 text-left text-sm text-gray-300 hover:bg-gray-800 flex flex-col gap-1 group"
+                                                >
+                                                    <div className="flex items-center justify-between">
+                                                        <span className="font-medium text-white">{model.name}</span>
+                                                        {copiedModel === model.id ? (
+                                                            <span className="flex items-center gap-1 text-xs text-green-400">
+                                                                <Check className="w-3 h-3" />
+                                                                Copied!
+                                                            </span>
+                                                        ) : (
+                                                            <ExternalLink className="w-3 h-3 text-gray-400 group-hover:text-gray-300" />
+                                                        )}
+                                                    </div>
+                                                    <p className="text-xs text-gray-400">{model.description}</p>
+                                                    {model.website && (
+                                                        <p className="text-xs text-blue-400">{model.website}</p>
+                                                    )}
+                                                </motion.button>
+                                            ))}
+                                        </motion.div>
+                                    )}
+                                </AnimatePresence>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {item.type === 'transition' && (
+                    <textarea
+                        value={item.note}
+                        onChange={e => updateItem({ ...item, note: e.target.value })}
+                        className="w-full flex-grow bg-gray-900 rounded p-3 text-gray-300 min-h-[160px]"
+                    />
+                )}
+
+                {item.type === 'text' && (
+                    <textarea
+                        value={item.title}
+                        onChange={e => updateItem({ ...item, title: e.target.value })}
+                        className="w-full flex-grow bg-gray-900 rounded p-3 text-gray-300 min-h-[160px]"
+                    />
+                )}
             </div>
         );
     }
