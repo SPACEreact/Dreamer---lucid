@@ -76,10 +76,8 @@ import {
     BrollItem,
     TransitionItem,
     TextItem,
-    SoundDesignData,
     CastingData,
 } from './types';
-import { SoundDesignModule } from './components/SoundDesignModule';
 import { CastingAssistant } from './components/CastingAssistant';
 import { VisualProgressTracker } from './components/VisualProgressTracker';
 import { StoryIdeation } from './components/StoryIdeation';
@@ -1668,8 +1666,6 @@ interface VisualSequenceEditorProps {
     setAspectRatios: React.Dispatch<React.SetStateAction<Record<string, string>>>;
     styles: Record<string, 'cinematic' | 'explainer'>;
     setStyles: React.Dispatch<React.SetStateAction<Record<string, 'cinematic' | 'explainer'>>>;
-    soundDesignData: Record<string, SoundDesignData>;
-    setSoundDesignData: React.Dispatch<React.SetStateAction<Record<string, SoundDesignData>>>;
     castingData: Record<string, CastingData>;
     setCastingData: React.Dispatch<React.SetStateAction<Record<string, CastingData>>>;
     deleteTimelineItem: (id: string) => void;
@@ -1702,9 +1698,7 @@ interface SelectedItemPanelProps {
     setAspectRatios: React.Dispatch<React.SetStateAction<Record<string, string>>>;
     styles: Record<string, 'cinematic' | 'explainer'>;
     setStyles: React.Dispatch<React.SetStateAction<Record<string, 'cinematic' | 'explainer'>>>;
-    // Sound Design & Casting Props
-    soundDesignData: Record<string, SoundDesignData>;
-    setSoundDesignData: React.Dispatch<React.SetStateAction<Record<string, SoundDesignData>>>;
+    // Casting Props
     castingData: Record<string, CastingData>;
     setCastingData: React.Dispatch<React.SetStateAction<Record<string, CastingData>>>;
 }
@@ -1714,9 +1708,9 @@ const SelectedItemPanel: React.FC<SelectedItemPanelProps> = ({
     item, updateItem, onEnhance, onRevert, onGenerateImage, onGenerateVideoPrompt, generatedContent,
     compositions, lightingData, colorGradingData, cameraMovement, updateVisuals, updatePromptFromVisuals,
     aspectRatios, setAspectRatios, styles, setStyles,
-    soundDesignData, setSoundDesignData, castingData, setCastingData
+    castingData, setCastingData
 }) => {
-    const [activeVisualTab, setActiveVisualTab] = useState<'composition' | 'lighting' | 'color' | 'camera' | 'sound' | 'casting'>('composition');
+    const [activeVisualTab, setActiveVisualTab] = useState<'composition' | 'lighting' | 'color' | 'camera' | 'casting'>('composition');
     const [imageView, setImageView] = useState<'photoreal' | 'stylized'>('photoreal');
     const [isUpdatingPrompt, setIsUpdatingPrompt] = useState(false);
     const [copiedModel, setCopiedModel] = useState<string | null>(null);
@@ -1957,7 +1951,7 @@ const SelectedItemPanel: React.FC<SelectedItemPanelProps> = ({
                     </button>
                  </div>
                  <div className="flex items-center space-x-2 mb-2 border-b border-gray-800 overflow-x-auto">
-                    {(['composition', 'lighting', 'color', 'camera', 'sound', 'casting'] as const).map(tab => (
+                    {(['composition', 'lighting', 'color', 'camera', 'casting'] as const).map(tab => (
                         <button key={tab} onClick={() => setActiveVisualTab(tab)} className={`px-4 py-2 text-sm capitalize rounded-t-lg transition-colors whitespace-nowrap ${activeVisualTab === tab ? 'bg-gray-800 text-amber-400' : 'text-gray-400 hover:bg-gray-900'}`}>
                             {tab}
                         </button>
@@ -1978,16 +1972,6 @@ const SelectedItemPanel: React.FC<SelectedItemPanelProps> = ({
                         {activeVisualTab === 'lighting' && <LightingEditor lighting={visualData.lighting} onChange={onLightingChange} />}
                         {activeVisualTab === 'color' && <ColorGradingEditor color={visualData.color} onChange={onColorChange} />}
                         {activeVisualTab === 'camera' && <CameraMovementEditor camera={visualData.camera} onChange={onCameraChange} onPathChange={onCameraPathChange}/>}
-                        {activeVisualTab === 'sound' && <SoundDesignModule
-                            sceneDescription={shotData.description}
-                            visualMood={visualData.lighting.mood}
-                            characters={visualData.composition.characters.map(c => c.name)}
-                            cameraMovement={visualData.camera.movementType}
-                            lighting={visualData.lighting.mood}
-                            onSoundDataUpdate={(data) => {
-                                setSoundDesignData(prev => ({ ...prev, [item.id]: data }));
-                            }}
-                        />}
                         {activeVisualTab === 'casting' && <CastingAssistant
                             characters={visualData.composition.characters.map(c => c.name)}
                             sceneDescription={shotData.description}
@@ -2018,8 +2002,6 @@ const VisualSequenceEditor: React.FC<VisualSequenceEditorProps> = (props) => {
         setAspectRatios,
         styles,
         setStyles,
-        soundDesignData,
-        setSoundDesignData,
         castingData,
         setCastingData,
         deleteTimelineItem,
@@ -2405,8 +2387,6 @@ const VisualSequenceEditor: React.FC<VisualSequenceEditorProps> = (props) => {
                                 setAspectRatios={setAspectRatios}
                                 styles={styles}
                                 setStyles={setStyles}
-                                soundDesignData={soundDesignData}
-                                setSoundDesignData={setSoundDesignData}
                                 castingData={castingData}
                                 setCastingData={setCastingData}
                            />
@@ -2651,8 +2631,7 @@ export default function App() {
     const [aspectRatios, setAspectRatios] = useState<Record<string, string>>({});
     const [styles, setStyles] = useState<Record<string, 'cinematic' | 'explainer'>>({});
     
-    // Sound Design & Casting State
-    const [soundDesignData, setSoundDesignData] = useState<Record<string, SoundDesignData>>({});
+    // Casting State
     const [castingData, setCastingData] = useState<Record<string, CastingData>>({});
     const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
     const [isLoadingProgress, setIsLoadingProgress] = useState(true);
@@ -3354,8 +3333,6 @@ export default function App() {
             setAspectRatios={setAspectRatios}
             styles={styles}
             setStyles={setStyles}
-            soundDesignData={soundDesignData}
-            setSoundDesignData={setSoundDesignData}
             castingData={castingData}
             setCastingData={setCastingData}
             deleteTimelineItem={deleteTimelineItem}

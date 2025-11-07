@@ -178,40 +178,6 @@ export interface SequenceStyle {
   mood: string;
 }
 
-// Sound Design Module Types
-export type AudioMoodTag = 'ambient' | 'tense' | 'romantic' | 'epic' | 'mysterious' | 'action' | 'suspense';
-
-export interface SoundCategory {
-  id: string;
-  name: string;
-  type: 'environmental' | 'musical' | 'sfx' | 'atmospheric';
-  description: string;
-  mood: AudioMoodTag[];
-}
-
-export interface AudioSuggestion {
-  id: string;
-  category: SoundCategory;
-  description: string;
-  duration: number;
-  mood: AudioMoodTag;
-}
-
-export interface FoleySuggestion {
-  id: string;
-  characterName: string;
-  soundEffect: string;
-  timing: string;
-  description: string;
-}
-
-export interface SoundDesignData {
-  mood: AudioMoodTag[];
-  categories: string[];
-  suggestions: AudioSuggestion[];
-  foley: FoleySuggestion[];
-}
-
 // Casting Assistant Types
 export type AgeRange = '18-25' | '26-35' | '36-45' | '46-55' | '56-65' | '65+';
 export type PhysicalBuild = 'slim' | 'athletic' | 'average' | 'muscular' | 'plus-size';

@@ -3,7 +3,7 @@
 
 
 import { GoogleGenAI, Modality, Type } from "@google/genai";
-import { ExtractedKnowledge, StoryboardShot, SequenceStyle, CompositionData, LightingData, ColorGradingData, CameraMovementData, CompositionCharacter, AudioMoodTag, AudioSuggestion, FoleySuggestion, CharacterAnalysis, CastingSuggestion } from "../types";
+import { ExtractedKnowledge, StoryboardShot, SequenceStyle, CompositionData, LightingData, ColorGradingData, CameraMovementData, CompositionCharacter, CharacterAnalysis, CastingSuggestion } from "../types";
 import { huggingFaceService } from "./huggingFaceService";
 import { geminiLogger } from '../lib/logger';
 import { handleAIServiceError, sanitizeErrorMessage } from '../lib/errorHandler';
@@ -683,140 +683,6 @@ export const initializeVisualsFromStoryboardShot = async (shot: StoryboardShot):
             color: clone(defaultColorGrading),
             camera: clone(defaultCameraMovement),
         };
-    }
-};
-
-// ========================================================================
-// SOUND DESIGN MODULE SERVICES
-// ========================================================================
-
-export const analyzeSoundMood = async (sceneDescription: string, visualMood: string): Promise<AudioMoodTag[]> => {
-    try {
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: `As a professional sound designer, analyze this scene and suggest appropriate audio mood tags.
-
-SCENE DESCRIPTION:
-${sceneDescription}
-
-VISUAL MOOD:
-${visualMood}
-
-Choose 2-3 most fitting audio moods from: ambient, tense, romantic, epic, mysterious, action, suspense.
-Return only the mood tags as a JSON array of strings.`,
-            config: {
-                responseMimeType: "application/json",
-                responseSchema: {
-                    type: Type.ARRAY,
-                    items: { type: Type.STRING }
-                }
-            }
-        });
-        return JSON.parse(response.text.trim());
-    } catch (error) {
-        handleAIServiceError(error, 'Sound Mood Analysis');
-        return ['ambient'];
-    }
-};
-
-export const generateSoundSuggestions = async (
-    sceneDescription: string,
-    mood: AudioMoodTag[],
-    cameraMovement: string,
-    lighting: string
-): Promise<AudioSuggestion[]> => {
-    try {
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.0-flash-exp',
-            contents: `As a professional sound designer, suggest 5-7 specific sound elements for this cinematic scene.
-
-SCENE DESCRIPTION: ${sceneDescription}
-AUDIO MOOD: ${mood.join(', ')}
-CAMERA MOVEMENT: ${cameraMovement}
-LIGHTING: ${lighting}
-
-For each sound suggestion, provide:
-- A unique ID (use timestamp-based)
-- Category (environmental, musical, sfx, atmospheric)
-- Detailed description of the sound
-- Duration in seconds
-- Primary mood tag
-
-Return as a JSON array.`,
-            config: {
-                responseMimeType: "application/json",
-                responseSchema: {
-                    type: Type.ARRAY,
-                    items: {
-                        type: Type.OBJECT,
-                        properties: {
-                            id: { type: Type.STRING },
-                            category: { type: Type.OBJECT, properties: {
-                                name: { type: Type.STRING },
-                                type: { type: Type.STRING }
-                            }},
-                            description: { type: Type.STRING },
-                            duration: { type: Type.NUMBER },
-                            mood: { type: Type.STRING }
-                        }
-                    }
-                },
-                thinkingConfig: { thinkingBudget: 4096 }
-            }
-        });
-        return JSON.parse(response.text.trim());
-    } catch (error) {
-        handleAIServiceError(error, 'Sound Suggestions Generation');
-        return [];
-    }
-};
-
-export const generateFoleySuggestions = async (
-    characters: string[],
-    sceneDescription: string,
-    actions: string
-): Promise<FoleySuggestion[]> => {
-    try {
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.0-flash-exp',
-            contents: `As a professional foley artist, suggest specific sound effects for this scene.
-
-CHARACTERS: ${characters.join(', ')}
-SCENE: ${sceneDescription}
-ACTIONS: ${actions}
-
-For each foley suggestion, provide:
-- ID (timestamp-based)
-- Character name
-- Sound effect description
-- Timing (e.g., "continuous", "at 2.5s", "during movement")
-- Detailed description
-
-Focus on character-specific sounds: footsteps, clothing rustle, object interactions, breathing, etc.
-
-Return as a JSON array.`,
-            config: {
-                responseMimeType: "application/json",
-                responseSchema: {
-                    type: Type.ARRAY,
-                    items: {
-                        type: Type.OBJECT,
-                        properties: {
-                            id: { type: Type.STRING },
-                            characterName: { type: Type.STRING },
-                            soundEffect: { type: Type.STRING },
-                            timing: { type: Type.STRING },
-                            description: { type: Type.STRING }
-                        }
-                    }
-                },
-                thinkingConfig: { thinkingBudget: 4096 }
-            }
-        });
-        return JSON.parse(response.text.trim());
-    } catch (error) {
-        handleAIServiceError(error, 'Foley Suggestions Generation');
-        return [];
     }
 };
 
