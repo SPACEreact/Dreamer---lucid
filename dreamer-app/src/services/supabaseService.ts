@@ -97,7 +97,6 @@ export const saveStoryboard = async (name: string, data: {
     aspectRatios: any;
     styles: any;
     soundDesignData?: any;
-    castingData?: any;
 }) => {
     try {
         const sessionId = getSessionId();
@@ -114,8 +113,7 @@ export const saveStoryboard = async (name: string, data: {
                 camera_movement: data.cameraMovement,
                 aspect_ratios: data.aspectRatios,
                 styles: data.styles,
-                sound_design_data: data.soundDesignData || {},
-                casting_data: data.castingData || {}
+                sound_design_data: data.soundDesignData || {}
             });
         
         if (error) {
