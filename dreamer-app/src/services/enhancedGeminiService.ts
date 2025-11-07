@@ -1,14 +1,12 @@
 // Enhanced Gemini Service with Extended Capabilities
 // Adds TTS, advanced prompting, and enhanced AI features
 
-import { 
+import {
     analyzeSoundMood as geminiAnalyzeSoundMood,
     generateSoundSuggestions as geminiGenerateSoundSuggestions,
     generateFoleySuggestions as geminiGenerateFoleySuggestions,
-    analyzeCharacter as geminiAnalyzeCharacter,
-    generateCastingSuggestions as geminiGenerateCastingSuggestions
 } from './geminiService';
-import { AudioMoodTag, AudioSuggestion, FoleySuggestion, CharacterAnalysis, CastingSuggestion } from '../types';
+import { AudioMoodTag, AudioSuggestion, FoleySuggestion } from '../types';
 
 // Text-to-Speech using Web Speech API as fallback
 class TextToSpeechService {
@@ -179,94 +177,6 @@ export const previewAudioSuggestion = (description: string) => {
 // Stop audio preview
 export const stopAudioPreview = () => {
     ttsService.stop();
-};
-
-// Enhanced Casting Functions with Advanced Analysis
-export const analyzeCharacterEnhanced = async (
-    characterName: string,
-    description: string,
-    dialogueSamples?: string
-): Promise<{ analysis: CharacterAnalysis, insights: string }> => {
-    try {
-        const analysis = await geminiAnalyzeCharacter(characterName, description, dialogueSamples);
-        
-        const insights = `AI analysis for ${characterName}: Identified as ${analysis.ageRange} ${analysis.gender} with ${analysis.physicalTraits.build} build. The character exhibits ${analysis.personalityTraits.length} key personality traits and requires ${analysis.actingStyle.length} specific acting approaches. This comprehensive analysis ensures authentic casting recommendations.`;
-        
-        return { analysis, insights };
-    } catch (error) {
-        console.error('Enhanced character analysis failed:', sanitizeErrorMessage(error));
-        return {
-            analysis: {
-                name: characterName,
-                ageRange: '26-35',
-                gender: 'any',
-                ethnicity: ['any'],
-                physicalTraits: {
-                    build: 'average',
-                    distinctiveFeatures: []
-                },
-                personalityTraits: [],
-                actingStyle: []
-            },
-            insights: 'Character analysis encountered an error. Using default values.'
-        };
-    }
-};
-
-export const generateCastingSuggestionsEnhanced = async (
-    character: CharacterAnalysis,
-    sceneContext: string,
-    diversityFocus: boolean = true
-): Promise<{ suggestions: CastingSuggestion, diversityScore: number, summary: string }> => {
-    try {
-        const suggestions = await geminiGenerateCastingSuggestions(character, sceneContext, diversityFocus);
-        
-        // Calculate diversity score based on suggestions
-        const diversityScore = calculateDiversityScore(suggestions);
-        
-        const summary = `Generated ${suggestions.suggestions.length} diverse casting options for ${character.name}. ${diversityFocus ? 'Diversity-focused casting ensures inclusive representation across multiple backgrounds and perspectives.' : 'Standard casting approach with balanced options.'} Diversity score: ${diversityScore}%.`;
-        
-        return { suggestions, diversityScore, summary };
-    } catch (error) {
-        console.error('Enhanced casting suggestions failed:', sanitizeErrorMessage(error));
-        return {
-            suggestions: {
-                id: crypto.randomUUID(),
-                characterName: character.name,
-                suggestions: []
-            },
-            diversityScore: 0,
-            summary: 'Casting generation encountered an error.'
-        };
-    }
-};
-
-const calculateDiversityScore = (castingSuggestion: CastingSuggestion): number => {
-    // Safe array access with bounds checking
-    if (!castingSuggestion || !castingSuggestion.suggestions || castingSuggestion.suggestions.length === 0) {
-        return 0;
-    }
-    
-    try {
-        const uniqueBackgrounds = new Set(
-            castingSuggestion.suggestions
-                .filter(s => s && s.diversityConsideration) // Filter null/undefined items
-                .map(s => s.diversityConsideration)
-        );
-        
-        // Higher score for more diverse suggestions
-        const score = (uniqueBackgrounds.size / castingSuggestion.suggestions.length) * 100;
-        return Math.min(100, Math.max(0, score)); // Ensure score is between 0-100
-    } catch (error) {
-        console.error('Error calculating diversity score:', sanitizeErrorMessage(error));
-        return 0;
-    }
-};
-
-// Voice preview for casting suggestions
-export const previewCastingSuggestion = (suggestion: string) => {
-    const previewText = `Casting suggestion: ${suggestion}`;
-    ttsService.speak(previewText, { rate: 1.0, pitch: 0.9 });
 };
 
 // Advanced prompt enhancement for better AI results

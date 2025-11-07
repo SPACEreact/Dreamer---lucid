@@ -212,39 +212,3 @@ export interface SoundDesignData {
   foley: FoleySuggestion[];
 }
 
-// Casting Assistant Types
-export type AgeRange = '18-25' | '26-35' | '36-45' | '46-55' | '56-65' | '65+';
-export type PhysicalBuild = 'slim' | 'athletic' | 'average' | 'muscular' | 'plus-size';
-export type Ethnicity = 'any' | 'caucasian' | 'african' | 'asian' | 'hispanic' | 'middle-eastern' | 'mixed';
-export type Gender = 'male' | 'female' | 'non-binary' | 'any';
-
-export interface CharacterAnalysis {
-  name: string;
-  ageRange: AgeRange;
-  gender: Gender;
-  ethnicity: Ethnicity[];
-  physicalTraits: {
-    height?: string;
-    build: PhysicalBuild;
-    distinctiveFeatures: string[];
-  };
-  personalityTraits: string[];
-  actingStyle: string[];
-}
-
-export interface CastingSuggestion {
-  id: string;
-  characterName: string;
-  suggestions: {
-    description: string;
-    ageRange: AgeRange;
-    physicalDescription: string;
-    actingNotes: string;
-    diversityConsideration: string;
-  }[];
-}
-
-export interface CastingData {
-  characters: CharacterAnalysis[];
-  suggestions: CastingSuggestion[];
-}

@@ -29,7 +29,8 @@ import {
   GripVertical,
   Palette,
   ChevronDown,
-  ExternalLink
+  ExternalLink,
+  Loader2
 } from 'lucide-react';
 import {
   questions,
@@ -76,10 +77,8 @@ import {
     TransitionItem,
     TextItem,
     SoundDesignData,
-    CastingData,
 } from './types';
 import { SoundDesignModule } from './components/SoundDesignModule';
-import { CastingAssistant } from './components/CastingAssistant';
 import { VisualProgressTracker } from './components/VisualProgressTracker';
 import { StoryIdeation } from './components/StoryIdeation';
 import { ErrorBoundary } from './components/ErrorBoundary';
@@ -191,9 +190,31 @@ const AI_MODELS: AIModel[] = [
 ];
 
 // Format prompt for different AI models
-const formatPromptForModel = (shot: any, model: AIModel): string => {
-  const basePrompt = `${shot.shotDetails.shotType} ${shot.shotDetails.cameraAngle}. ${shot.shotDetails.description}. ${shot.shotDetails.lightingMood} lighting. ${shot.shotDetails.cameraMovement} camera movement.`;
-  
+const formatPromptForModel = (promptSource: any, model: AIModel): string => {
+  let basePrompt = '';
+
+  if (typeof promptSource === 'string') {
+    basePrompt = promptSource;
+  } else if (promptSource?.shotDetails) {
+    const details = promptSource.shotDetails;
+    const segments = [
+      `${details?.shotType ?? ''} ${details?.cameraAngle ?? ''}`.trim(),
+      details?.description ?? '',
+      `${details?.lightingMood ?? ''} lighting`.trim(),
+      `${details?.cameraMovement ?? ''} camera movement`.trim()
+    ].filter(Boolean);
+    basePrompt = segments.join('. ').trim();
+    if (basePrompt && !basePrompt.endsWith('.')) {
+      basePrompt = `${basePrompt}.`;
+    }
+  } else if (typeof promptSource === 'object' && typeof promptSource?.prompt === 'string') {
+    basePrompt = promptSource.prompt;
+  }
+
+  if (!basePrompt) {
+    return '';
+  }
+
   switch (model.id) {
     case 'midjourney':
     case 'bluewillow':
@@ -1659,14 +1680,49 @@ interface VisualSequenceEditorProps {
     setStyles: React.Dispatch<React.SetStateAction<Record<string, 'cinematic' | 'explainer'>>>;
     soundDesignData: Record<string, SoundDesignData>;
     setSoundDesignData: React.Dispatch<React.SetStateAction<Record<string, SoundDesignData>>>;
-    castingData: Record<string, CastingData>;
-    setCastingData: React.Dispatch<React.SetStateAction<Record<string, CastingData>>>;
     deleteTimelineItem: (id: string) => void;
 }
 
 // #############################################################################################
 // COMPONENT: SelectedItemPanel (NEW FOR VISUAL SEQUENCE EDITOR)
 // #############################################################################################
+interface ShotGeneratedContent {
+    images: { photoreal?: string; stylized?: string };
+    enhancedPrompt?: string;
+    videoPrompt?: string;
+    status: 'idle' | 'loading' | 'error';
+    isEnhancing: boolean;
+    imageLoading: { photoreal: boolean; stylized: boolean };
+    isGeneratingVideoPrompt: boolean;
+}
+
+const createDefaultShotGeneratedContent = (): ShotGeneratedContent => ({
+    images: {},
+    status: 'idle',
+    isEnhancing: false,
+    imageLoading: { photoreal: false, stylized: false },
+    isGeneratingVideoPrompt: false,
+});
+
+const ensureShotGeneratedContent = (entry?: ShotGeneratedContent): ShotGeneratedContent => {
+    if (!entry) {
+        return createDefaultShotGeneratedContent();
+    }
+
+    return {
+        ...createDefaultShotGeneratedContent(),
+        ...entry,
+        images: entry.images ?? {},
+        imageLoading: {
+            photoreal: entry.imageLoading?.photoreal ?? false,
+            stylized: entry.imageLoading?.stylized ?? false,
+        },
+    };
+};
+
+const hasActiveLoading = (entry: ShotGeneratedContent): boolean =>
+    entry.isEnhancing || entry.imageLoading.photoreal || entry.imageLoading.stylized || entry.isGeneratingVideoPrompt;
+
 interface SelectedItemPanelProps {
     item: AnyTimelineItem;
     updateItem: (updatedItem: AnyTimelineItem) => void;
@@ -1688,11 +1744,9 @@ interface SelectedItemPanelProps {
     setAspectRatios: React.Dispatch<React.SetStateAction<Record<string, string>>>;
     styles: Record<string, 'cinematic' | 'explainer'>;
     setStyles: React.Dispatch<React.SetStateAction<Record<string, 'cinematic' | 'explainer'>>>;
-    // Sound Design & Casting Props
+    // Sound Design Props
     soundDesignData: Record<string, SoundDesignData>;
     setSoundDesignData: React.Dispatch<React.SetStateAction<Record<string, SoundDesignData>>>;
-    castingData: Record<string, CastingData>;
-    setCastingData: React.Dispatch<React.SetStateAction<Record<string, CastingData>>>;
 }
 
 
@@ -1700,12 +1754,45 @@ const SelectedItemPanel: React.FC<SelectedItemPanelProps> = ({
     item, updateItem, onEnhance, onRevert, onGenerateVideoPrompt, generatedContent,
     compositions, lightingData, colorGradingData, cameraMovement, updateVisuals, updatePromptFromVisuals,
     aspectRatios, setAspectRatios, styles, setStyles,
-    soundDesignData, setSoundDesignData, castingData, setCastingData
+    soundDesignData, setSoundDesignData
 }) => {
     const [activeVisualTab, setActiveVisualTab] = useState<'composition' | 'lighting' | 'color' | 'camera' | 'sound' | 'casting'>('composition');
     const [isUpdatingPrompt, setIsUpdatingPrompt] = useState(false);
     const [copiedModel, setCopiedModel] = useState<string | null>(null);
     const [showCopyMenu, setShowCopyMenu] = useState(false);
+    const copyMenuRef = useRef<HTMLDivElement | null>(null);
+
+    useEffect(() => {
+        if (!showCopyMenu) return;
+
+        const handleClickOutside = (event: MouseEvent) => {
+            if (copyMenuRef.current && !copyMenuRef.current.contains(event.target as Node)) {
+                setShowCopyMenu(false);
+            }
+        };
+
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => {
+            document.removeEventListener('mousedown', handleClickOutside);
+        };
+    }, [showCopyMenu]);
+
+    useEffect(() => {
+        setShowCopyMenu(false);
+        setCopiedModel(null);
+    }, [item.id, item.type]);
+
+    const isPhotorealLoading = generatedContent.imageLoading.photoreal;
+    const isStylizedLoading = generatedContent.imageLoading.stylized;
+    const isVideoPromptLoading = generatedContent.isGeneratingVideoPrompt;
+    const isImageLoading = isPhotorealLoading || isStylizedLoading;
+    const loadingMessage = generatedContent.isEnhancing
+        ? 'Enhancing prompt...'
+        : isImageLoading
+            ? 'Generating image...'
+            : isVideoPromptLoading
+                ? 'Generating video prompt...'
+                : 'Processing...';
 
     const handleUpdatePromptFromVisuals = async () => {
         setIsUpdatingPrompt(true);
@@ -1728,14 +1815,101 @@ const SelectedItemPanel: React.FC<SelectedItemPanelProps> = ({
     };
 
     if (item.type !== 'shot') {
+        const isPromptItem = item.type === 'b-roll';
+
         return (
-            <div className="flex-grow flex flex-col p-4 bg-gray-950 border border-gray-800 rounded-lg">
-                 <h2 className="text-xl font-semibold text-amber-400 mb-2">
+            <div className="flex-grow flex flex-col p-4 bg-gray-950 border border-gray-800 rounded-lg space-y-4">
+                <h2 className="text-xl font-semibold text-amber-400">
                     {item.type === 'b-roll' ? 'B-Roll Shot' : item.type === 'transition' ? 'Transition Note' : 'Title Card'}
                 </h2>
-                {item.type === 'b-roll' && <textarea value={item.prompt} onChange={e => updateItem({...item, prompt: e.target.value})} className="w-full flex-grow bg-gray-900 rounded p-2 text-gray-300"/>}
-                {item.type === 'transition' && <textarea value={item.note} onChange={e => updateItem({...item, note: e.target.value})} className="w-full flex-grow bg-gray-900 rounded p-2 text-gray-300"/>}
-                {item.type === 'text' && <textarea value={item.title} onChange={e => updateItem({...item, title: e.target.value})} className="w-full flex-grow bg-gray-900 rounded p-2 text-gray-300"/>}
+
+                {isPromptItem && (
+                    <div className="flex flex-col md:flex-row md:items-start gap-4">
+                        <textarea
+                            value={item.prompt}
+                            onChange={e => updateItem({ ...item, prompt: e.target.value })}
+                            className="w-full md:flex-1 bg-gray-900 rounded p-3 text-gray-300 min-h-[160px]"
+                        />
+                        <div className="md:w-56 w-full flex md:block justify-end">
+                            <div className="relative w-full md:w-auto" ref={copyMenuRef}>
+                                <motion.button
+                                    whileHover={{ scale: 1.02 }}
+                                    whileTap={{ scale: 0.98 }}
+                                    onClick={() => setShowCopyMenu(prev => !prev)}
+                                    className="w-full md:w-auto px-3 py-2 text-sm rounded-lg bg-blue-500/20 text-blue-300 border border-blue-500/40 hover:bg-blue-500/30 flex items-center justify-center space-x-2"
+                                >
+                                    <ExternalLink className="w-4 h-4" />
+                                    <span>AI Models</span>
+                                    <ChevronDown className={`w-4 h-4 transition-transform ${showCopyMenu ? 'rotate-180' : ''}`} />
+                                </motion.button>
+
+                                <AnimatePresence>
+                                    {showCopyMenu && (
+                                        <motion.div
+                                            initial={{ opacity: 0, y: -4 }}
+                                            animate={{ opacity: 1, y: 0 }}
+                                            exit={{ opacity: 0, y: -4 }}
+                                            className="absolute right-0 top-full mt-2 w-64 bg-gray-900 border border-gray-700 rounded-lg shadow-xl z-50 max-h-80 overflow-y-auto"
+                                        >
+                                            <div className="p-3 border-b border-gray-700">
+                                                <p className="text-xs text-gray-300 font-medium">Copy for AI Image Generation</p>
+                                            </div>
+                                            {AI_MODELS.map(model => (
+                                                <motion.button
+                                                    key={model.id}
+                                                    whileHover={{ backgroundColor: 'rgba(55, 65, 81, 0.5)' }}
+                                                    onClick={async () => {
+                                                        const formattedPrompt = formatPromptForModel(item.prompt, model);
+                                                        if (!formattedPrompt) {
+                                                            return;
+                                                        }
+                                                        await navigator.clipboard.writeText(formattedPrompt);
+                                                        setCopiedModel(model.id);
+                                                        setTimeout(() => setCopiedModel(null), 1500);
+                                                        setShowCopyMenu(false);
+                                                    }}
+                                                    className="w-full px-4 py-3 text-left text-sm text-gray-300 hover:bg-gray-800 flex flex-col gap-1 group"
+                                                >
+                                                    <div className="flex items-center justify-between">
+                                                        <span className="font-medium text-white">{model.name}</span>
+                                                        {copiedModel === model.id ? (
+                                                            <span className="flex items-center gap-1 text-xs text-green-400">
+                                                                <Check className="w-3 h-3" />
+                                                                Copied!
+                                                            </span>
+                                                        ) : (
+                                                            <ExternalLink className="w-3 h-3 text-gray-400 group-hover:text-gray-300" />
+                                                        )}
+                                                    </div>
+                                                    <p className="text-xs text-gray-400">{model.description}</p>
+                                                    {model.website && (
+                                                        <p className="text-xs text-blue-400">{model.website}</p>
+                                                    )}
+                                                </motion.button>
+                                            ))}
+                                        </motion.div>
+                                    )}
+                                </AnimatePresence>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {item.type === 'transition' && (
+                    <textarea
+                        value={item.note}
+                        onChange={e => updateItem({ ...item, note: e.target.value })}
+                        className="w-full flex-grow bg-gray-900 rounded p-3 text-gray-300 min-h-[160px]"
+                    />
+                )}
+
+                {item.type === 'text' && (
+                    <textarea
+                        value={item.title}
+                        onChange={e => updateItem({ ...item, title: e.target.value })}
+                        className="w-full flex-grow bg-gray-900 rounded p-3 text-gray-300 min-h-[160px]"
+                    />
+                )}
             </div>
         );
     }
@@ -1779,7 +1953,20 @@ const SelectedItemPanel: React.FC<SelectedItemPanelProps> = ({
                    {isModified && (
                         <motion.button title="Revert to Original Prompt" whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }} onClick={() => onRevert(shotItem)} className="p-2.5 md:p-3 bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors"><RefreshCcw className="w-4 h-4 md:w-5 md:h-5 text-amber-400"/></motion.button>
                    )}
-                   <motion.button title="Enhance with AI" whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }} onClick={() => onEnhance(shotItem)} className="p-2.5 md:p-3 bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors"><WandSparkles className="w-4 h-4 md:w-5 md:h-5 text-purple-400"/></motion.button>
+                   <motion.button
+                        title="Enhance with AI"
+                        whileHover={{ scale: 1.1 }}
+                        whileTap={{ scale: 0.9 }}
+                        onClick={() => onEnhance(shotItem)}
+                        disabled={generatedContent.isEnhancing}
+                        className="p-2.5 md:p-3 bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                    >
+                        {generatedContent.isEnhancing ? (
+                            <Loader2 className="w-4 h-4 md:w-5 md:h-5 text-purple-300 animate-spin" />
+                        ) : (
+                            <WandSparkles className="w-4 h-4 md:w-5 md:h-5 text-purple-400" />
+                        )}
+                    </motion.button>
                 </div>
             </div>
 
@@ -1891,7 +2078,7 @@ const SelectedItemPanel: React.FC<SelectedItemPanelProps> = ({
                     </button>
                  </div>
                  <div className="flex items-center space-x-2 mb-2 border-b border-gray-800 overflow-x-auto">
-                    {(['composition', 'lighting', 'color', 'camera', 'sound', 'casting'] as const).map(tab => (
+                    {(['composition', 'lighting', 'color', 'camera', 'sound'] as const).map(tab => (
                         <button key={tab} onClick={() => setActiveVisualTab(tab)} className={`px-4 py-2 text-sm capitalize rounded-t-lg transition-colors whitespace-nowrap ${activeVisualTab === tab ? 'bg-gray-800 text-amber-400' : 'text-gray-400 hover:bg-gray-900'}`}>
                             {tab}
                         </button>
@@ -1922,13 +2109,6 @@ const SelectedItemPanel: React.FC<SelectedItemPanelProps> = ({
                                 setSoundDesignData(prev => ({ ...prev, [item.id]: data }));
                             }}
                         />}
-                        {activeVisualTab === 'casting' && <CastingAssistant
-                            characters={visualData.composition.characters.map(c => c.name)}
-                            sceneDescription={shotData.description}
-                            onCastingDataUpdate={(data) => {
-                                setCastingData(prev => ({ ...prev, [item.id]: data }));
-                            }}
-                        />}
                     </motion.div>
                 </AnimatePresence>
             </div>
@@ -1954,8 +2134,6 @@ const VisualSequenceEditor: React.FC<VisualSequenceEditorProps> = (props) => {
         setStyles,
         soundDesignData,
         setSoundDesignData,
-        castingData,
-        setCastingData,
         deleteTimelineItem,
     } = props;
     
@@ -1968,6 +2146,11 @@ const VisualSequenceEditor: React.FC<VisualSequenceEditorProps> = (props) => {
     const [showVideoPromptModal, setShowVideoPromptModal] = useState<ShotItem | null>(null);
     const [videoPromptInstructions, setVideoPromptInstructions] = useState("");
     const [videoPromptCopied, setVideoPromptCopied] = useState(false);
+    const modalGeneratedContent = showVideoPromptModal
+        ? ensureShotGeneratedContent(generatedContent[showVideoPromptModal.id])
+        : null;
+    const isVideoPromptModalGenerating = modalGeneratedContent?.isGeneratingVideoPrompt ?? false;
+    const modalVideoPrompt = modalGeneratedContent?.videoPrompt;
     
     // Auto-scroll functionality for timeline items
     const timelineContainerRef = useRef<HTMLDivElement>(null);
@@ -2321,9 +2504,7 @@ const VisualSequenceEditor: React.FC<VisualSequenceEditorProps> = (props) => {
                                 setStyles={setStyles}
                                 soundDesignData={soundDesignData}
                                 setSoundDesignData={setSoundDesignData}
-                                castingData={castingData}
-                                setCastingData={setCastingData}
-                           />
+                            />
                         ) : (
                             <div className="flex-grow flex items-center justify-center text-gray-500 bg-gray-950/70 border border-gray-800 rounded-xl">
                                 <p className="text-lg">Select an item on the timeline to begin.</p>
@@ -2507,15 +2688,44 @@ const VisualSequenceEditor: React.FC<VisualSequenceEditorProps> = (props) => {
                 </div>
             </div>
              {showVideoPromptModal && (
-                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center p-4 z-50" onClick={() => setShowVideoPromptModal(null)}>
+                <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center p-4 z-50"
+                    onClick={() => {
+                        if (!isVideoPromptModalGenerating) {
+                            setShowVideoPromptModal(null);
+                        }
+                    }}
+                >
                     <motion.div initial={{ scale: 0.9 }} animate={{ scale: 1 }} exit={{ scale: 0.9 }} className="bg-gray-900 border border-gray-800 rounded-lg p-6 max-w-lg w-full" onClick={(e) => e.stopPropagation()}>
                         <h3 className="text-xl font-semibold mb-4">Generate Video Prompt for Shot {showVideoPromptModal.data.shotNumber}</h3>
                         <textarea value={videoPromptInstructions} onChange={(e) => setVideoPromptInstructions(e.target.value)} placeholder="Optional: describe desired camera movement or action..." className="w-full h-24 p-3 bg-gray-800 border border-gray-700 rounded-lg text-white mb-4" />
                         <div className="flex space-x-2">
-                             <motion.button onClick={() => setShowVideoPromptModal(null)} className="flex-1 py-3 bg-gray-800 hover:bg-gray-700 text-white rounded-lg">Cancel</motion.button>
-                             <motion.button onClick={handleGenerateVideoPrompt} className="flex-1 py-3 bg-amber-500 text-black rounded-lg">Generate</motion.button>
+                             <motion.button
+                                onClick={() => setShowVideoPromptModal(null)}
+                                disabled={isVideoPromptModalGenerating}
+                                className="flex-1 py-3 bg-gray-800 hover:bg-gray-700 text-white rounded-lg disabled:opacity-60 disabled:cursor-not-allowed"
+                             >
+                                Cancel
+                             </motion.button>
+                             <motion.button
+                                onClick={handleGenerateVideoPrompt}
+                                disabled={isVideoPromptModalGenerating}
+                                className="flex-1 py-3 bg-amber-500 text-black rounded-lg flex items-center justify-center space-x-2 disabled:opacity-60 disabled:cursor-not-allowed"
+                             >
+                                {isVideoPromptModalGenerating ? (
+                                    <>
+                                        <Loader2 className="w-4 h-4 animate-spin" />
+                                        <span>Generating...</span>
+                                    </>
+                                ) : (
+                                    <span>Generate</span>
+                                )}
+                             </motion.button>
                         </div>
-                        {generatedContent[showVideoPromptModal.id]?.videoPrompt && (
+                        {modalVideoPrompt && (
                             <div className="relative mt-4 bg-gray-800 p-3 rounded text-sm text-gray-200">
                                 <motion.button
                                     whileHover={{ scale: 1.1 }}
@@ -2526,7 +2736,7 @@ const VisualSequenceEditor: React.FC<VisualSequenceEditorProps> = (props) => {
                                 >
                                     {videoPromptCopied ? <Check className="w-4 h-4 text-green-400" /> : <ClipboardCopy className="w-4 h-4 text-gray-300" />}
                                 </motion.button>
-                                {generatedContent[showVideoPromptModal.id]?.videoPrompt}
+                                {modalVideoPrompt}
                             </div>
                         )}
                     </motion.div>
@@ -2565,9 +2775,8 @@ export default function App() {
     const [aspectRatios, setAspectRatios] = useState<Record<string, string>>({});
     const [styles, setStyles] = useState<Record<string, 'cinematic' | 'explainer'>>({});
     
-    // Sound Design & Casting State
+    // Sound Design State
     const [soundDesignData, setSoundDesignData] = useState<Record<string, SoundDesignData>>({});
-    const [castingData, setCastingData] = useState<Record<string, CastingData>>({});
     const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
     const [isLoadingProgress, setIsLoadingProgress] = useState(true);
 
@@ -3270,8 +3479,6 @@ export default function App() {
             setStyles={setStyles}
             soundDesignData={soundDesignData}
             setSoundDesignData={setSoundDesignData}
-            castingData={castingData}
-            setCastingData={setCastingData}
             deleteTimelineItem={deleteTimelineItem}
             showCollaboration={false}
             setShowCollaboration={() => {}}
