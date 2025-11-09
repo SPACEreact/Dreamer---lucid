@@ -10,7 +10,23 @@ import { handleAIServiceError, sanitizeErrorMessage } from '../lib/errorHandler'
 import { API_CONFIG, NUMERIC } from '../constants';
 
 // The GoogleGenAI instance is initialized with the API key from environment variables as per guidelines.
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+const getApiKey = () => {
+  // Try multiple ways to get the API key
+  return (
+    process.env.API_KEY ||
+    process.env.GOOGLE_API_KEY ||
+    process.env.GEMINI_API_KEY ||
+    (typeof window !== 'undefined' ? (window as any).GEMINI_API_KEY : undefined)
+  );
+};
+
+const apiKey = getApiKey();
+
+// Only initialize GoogleGenAI if API key is available
+const ai = apiKey ? new GoogleGenAI({ apiKey }) : null;
+
+// Flag to check if AI service is available
+const isAIServiceAvailable = () => ai !== null;
 
 /**
  * Enhanced error handler specifically for Gemini AI service
@@ -31,8 +47,14 @@ const defaultCameraMovement: CameraMovementData = { movementType: 'static contem
 
 
 export const extractKnowledge = async (content: string): Promise<ExtractedKnowledge | null> => {
+  // Return null if AI service is not available
+  if (!isAIServiceAvailable()) {
+    console.warn('Gemini AI service not available - no API key configured');
+    return null;
+  }
+  
   try {
-    const response = await ai.models.generateContent({
+    const response = await ai!.models.generateContent({
       model: 'gemini-2.5-pro',
       contents: `Analyze this document and extract cinematographic knowledge. Focus on key themes, visual styles, common character archetypes, and specific filmmaking techniques mentioned or implied.\n\nDOCUMENT:\n${content.substring(0, 8000)}`,
       config: {
@@ -60,15 +82,21 @@ export const extractKnowledge = async (content: string): Promise<ExtractedKnowle
 };
 
 export const getAISuggestions = async (context: string, currentQuestion: string, knowledgeDocs: any[] = []): Promise<string[]> => {
-    try {
-        // Use HuggingFace for local analysis to enhance context
-        await huggingFaceService.initialize();
-        const narrativeAnalysis = await huggingFaceService.analyzeNarrative(context);
-        
-        // Enhance context with HuggingFace analysis
-        const enhancedContext = `${context}\n\nNARRATIVE ANALYSIS (Local AI):\nGenre: ${narrativeAnalysis.genre}\nEmotional Tone: ${narrativeAnalysis.emotionalTone}\nVisual Cues: ${narrativeAnalysis.visualCues.join(', ')}\nNarrative Elements: ${narrativeAnalysis.narrativeElements.join(', ')}`;
+  // Return early if AI service is not available
+  if (!isAIServiceAvailable()) {
+    console.warn('Gemini AI service not available - no API key configured');
+    return [];
+  }
+  
+  try {
+    // Use HuggingFace for local analysis to enhance context
+    await huggingFaceService.initialize();
+    const narrativeAnalysis = await huggingFaceService.analyzeNarrative(context);
+    
+    // Enhance context with HuggingFace analysis
+    const enhancedContext = `${context}\n\nNARRATIVE ANALYSIS (Local AI):\nGenre: ${narrativeAnalysis.genre}\nEmotional Tone: ${narrativeAnalysis.emotionalTone}\nVisual Cues: ${narrativeAnalysis.visualCues.join(', ')}\nNarrative Elements: ${narrativeAnalysis.narrativeElements.join(', ')}`;
 
-        const response = await ai.models.generateContent({
+    const response = await ai!.models.generateContent({
             model: 'gemini-2.0-flash-exp',
             contents: `You are Dreamer, a visionary cinematography AI. Your voice is poetic, insightful, and steeped in film theory.
             Your task is to provide 3-5 creative, professional suggestions for the current question.
@@ -96,8 +124,14 @@ export const getAISuggestions = async (context: string, currentQuestion: string,
 };
 
 export const getRandomInspiration = async (context: string, currentQuestion: string): Promise<string> => {
+  // Return early if AI service is not available
+  if (!isAIServiceAvailable()) {
+    console.warn('Gemini AI service not available - no API key configured');
+    return "Inspiration is brewing... (AI service not available)";
+  }
+  
     try {
-        const response = await ai.models.generateContent({
+        const response = await ai!.models.generateContent({
             model: 'gemini-flash-lite-latest',
             contents: `You are a creative assistant. Based on the core idea of the scene, provide one, single, concise, and inspiring suggestion for the following question. The suggestion should be a fresh take but still relevant to the scene's context. Return only the suggestion text itself.
 
@@ -123,6 +157,12 @@ export const getKnowledgeBasedSuggestions = async (
     suggestions: string[];
     relevantKnowledge: string[];
 }> => {
+    // Return early if AI service is not available
+    if (!isAIServiceAvailable()) {
+        console.warn('Gemini AI service not available - no API key configured');
+        return { suggestions: [], relevantKnowledge: [] };
+    }
+    
     try {
         // Use HuggingFace for local analysis
         await huggingFaceService.initialize();
@@ -158,7 +198,7 @@ export const getKnowledgeBasedSuggestions = async (
         // Get AI-generated suggestions with enhanced context
         const enhancedContext = `${context}\n\nRELEVANT KNOWLEDGE: ${relevantKnowledge.join(' | ')}\nNARRATIVE TYPE: ${narrativeAnalysis.genre} (${narrativeAnalysis.emotionalTone})`;
         
-        const aiResponse = await ai.models.generateContent({
+        const aiResponse = await ai!.models.generateContent({
             model: 'gemini-2.0-flash-exp',
             contents: `Based on this narrative context and relevant cinematic knowledge, provide 2-3 specific suggestions for: "${currentQuestion}"
 
@@ -184,8 +224,14 @@ export const getKnowledgeBasedSuggestions = async (
 
 
 export const enhanceShotPrompt = async (basePrompt: string, context: string): Promise<string> => {
+  // Return early if AI service is not available
+  if (!isAIServiceAvailable()) {
+    console.warn('Gemini AI service not available - no API key configured');
+    return basePrompt;
+  }
+  
     try {
-        const response = await ai.models.generateContent({
+        const response = await ai!.models.generateContent({
             model: 'gemini-2.0-flash-exp',
             contents: `You are a world-class cinematographer AI with a deep understanding of film theory and practice.
             Your task is to refine the following cinematic shot prompt.
@@ -212,8 +258,14 @@ export const enhanceShotPrompt = async (basePrompt: string, context: string): Pr
 };
 
 export const generateStoryFromIdea = async (idea: string): Promise<string[]> => {
+  // Return early if AI service is not available
+  if (!isAIServiceAvailable()) {
+    console.warn('Gemini AI service not available - no API key configured');
+    return ["Story generation unavailable - AI service not configured"];
+  }
+  
     try {
-        const response = await ai.models.generateContent({
+        const response = await ai!.models.generateContent({
             model: 'gemini-2.0-flash-exp',
             contents: `Based on this cinematic concept: "${idea}"\n\nGenerate 3-5 creative scene descriptions that expand this idea into vivid, director-level prompts. Each should be 1-2 sentences and capture mood, character, and visual atmosphere. Format them as separate paragraphs, separated by a double newline.`,
             config: {
@@ -229,12 +281,18 @@ export const generateStoryFromIdea = async (idea: string): Promise<string[]> => 
 };
 
 export const generateImage = async (prompt: string, aspectRatio: string = '16:9', style: 'cinematic' | 'explainer' = 'cinematic'): Promise<string> => {
+    // Return early if AI service is not available
+    if (!isAIServiceAvailable()) {
+        console.warn('Gemini AI service not available - no API key configured');
+        return 'data:image/svg+xml;base64,' + btoa(`<svg width="400" height="300" xmlns="http://www.w3.org/2000/svg"><rect width="100%" height="100%" fill="#1a1a2e"/><text x="200" y="150" font-family="Arial" font-size="14" fill="white" text-anchor="middle">Image generation unavailable</text></svg>`);
+    }
+    
     try {
       const stylePrefix = style === 'explainer'
         ? 'A clean, simple, engaging illustration for an explainer video. The style should be modern, with clear lines and friendly colors. Focus on communicating the core idea of the prompt clearly.'
         : 'Create a cinematic, photorealistic image based on the following detailed prompt. Emphasize mood, lighting, and composition.';
 
-      const response = await ai.models.generateImages({
+      const response = await ai!.models.generateImages({
         model: 'imagen-4.0-generate-001',
         prompt: `${stylePrefix} ${prompt}`,
         config: {
@@ -256,12 +314,18 @@ export const generateImage = async (prompt: string, aspectRatio: string = '16:9'
 };
 
 export const generateNanoImage = async (prompt: string, style: 'cinematic' | 'explainer' = 'cinematic'): Promise<string> => {
+    // Return early if AI service is not available
+    if (!isAIServiceAvailable()) {
+        console.warn('Gemini AI service not available - no API key configured');
+        return 'data:image/svg+xml;base64,' + btoa(`<svg width="400" height="300" xmlns="http://www.w3.org/2000/svg"><rect width="100%" height="100%" fill="#0f0f23"/><text x="200" y="150" font-family="Arial" font-size="14" fill="#4fc3f7" text-anchor="middle">Nano image generation unavailable</text></svg>`);
+    }
+    
     try {
         const stylePrefix = style === 'explainer'
             ? 'A stylized, modern, and simple illustration for an explainer video. Focus on clarity, visual appeal, and effective communication of the core concept.'
             : 'A cinematic, stylized image based on the following detailed prompt. Emphasize mood, lighting, and composition.';
         
-        const response = await ai.models.generateContent({
+        const response = await ai!.models.generateContent({
             model: 'gemini-2.5-flash-image',
             contents: {
               parts: [{ text: `${stylePrefix} ${prompt}` }],
@@ -295,6 +359,12 @@ export const generateNanoImage = async (prompt: string, style: 'cinematic' | 'ex
 };
 
 export const generateStoryboard = async (script: string, style: 'cinematic' | 'explainer' = 'cinematic', customInstructions: string = ''): Promise<StoryboardShot[]> => {
+    // Return early if AI service is not available
+    if (!isAIServiceAvailable()) {
+        console.warn('Gemini AI service not available - no API key configured');
+        return [];
+    }
+    
     try {
         const instructionsSection = customInstructions.trim() 
             ? `\n\nCUSTOM INSTRUCTIONS:\n${customInstructions}\n\nPlease incorporate these specific instructions into your storyboard generation, adjusting the visual style, composition, lighting, and overall approach accordingly while maintaining the core narrative.`
@@ -307,7 +377,7 @@ export const generateStoryboard = async (script: string, style: 'cinematic' | 'e
         const prompt = style === 'explainer' ? explainerPrompt : cinematicPrompt;
 
         console.log('🎬 Starting storyboard generation with optimized settings...');
-        const response = await ai.models.generateContent({
+        const response = await ai!.models.generateContent({
             model: 'gemini-2.0-flash-exp',
             contents: prompt,
             config: {
@@ -382,7 +452,7 @@ export const generateStoryboard = async (script: string, style: 'cinematic' | 'e
 
 export const makeExplainerPromptCinematic = async (shot: StoryboardShot, knowledgeContext: string): Promise<StoryboardShot> => {
     try {
-        const response = await ai.models.generateContent({
+        const response = await ai!.models.generateContent({
             model: 'gemini-2.5-pro',
             contents: `You are a world-class Director of Photography, transforming a simple explainer video concept into a full-fledged cinematic shot.
             
@@ -473,7 +543,7 @@ export const generateVideoPrompt = async (
         
         contents.parts.push({ text: userPrompt });
         
-        const response = await ai.models.generateContent({
+        const response = await ai!.models.generateContent({
             model: 'gemini-2.0-flash-exp',
             contents: contents,
             config: { thinkingConfig: { thinkingBudget: 8192 } },
@@ -488,7 +558,7 @@ export const generateVideoPrompt = async (
 
 export const getTimelineSuggestion = async (context: string): Promise<string> => {
     try {
-        const response = await ai.models.generateContent({
+        const response = await ai!.models.generateContent({
             model: 'gemini-2.0-flash-exp',
             contents: `You are Dreamer, an expert film editor AI grounded in cinematic theory (Walter Murch's Rule of Six, etc.). Analyze the provided storyboard context and suggest a professional, creative edit or transition.
             
@@ -509,7 +579,7 @@ export const getTimelineSuggestion = async (context: string): Promise<string> =>
 
 export const analyzeSequenceStyle = async (prompts: string[]): Promise<SequenceStyle> => {
     try {
-        const response = await ai.models.generateContent({
+        const response = await ai!.models.generateContent({
             model: 'gemini-2.0-flash-exp',
             contents: `Analyze the following cinematic shot prompts to determine the sequence's overall "Visual DNA".
             
@@ -541,7 +611,7 @@ export const analyzeSequenceStyle = async (prompts: string[]): Promise<SequenceS
 
 export const generateBrollPrompt = async (context: string, style: SequenceStyle | null): Promise<string> => {
     try {
-        const response = await ai.models.generateContent({
+        const response = await ai!.models.generateContent({
             model: 'gemini-2.0-flash-exp',
             contents: `Generate a concise, cinematic B-roll or establishing shot prompt. It should be atmospheric and relevant to the surrounding scene context.
             
@@ -573,7 +643,7 @@ export const generateSmartVisualDescription = async (visuals: {
             ? `Characters are positioned as follows: ${visuals.composition.characters.map(c => `${c.name} at coordinates (X: ${Math.round(c.x)}, Y: ${Math.round(c.y)})`).join(', ')}.`
             : "There are no characters in the frame.";
 
-        const response = await ai.models.generateContent({
+        const response = await ai!.models.generateContent({
             model: 'gemini-2.5-flash',
             contents: `You are a master cinematographer. Based on the following structured visual data, write a single, evocative, cinematic paragraph describing the scene. Focus on composition, character placement, lighting mood, color theory, and camera work. Do not list the data; interpret it into a holistic description.
 
@@ -597,7 +667,7 @@ export const initializeVisualsFromStoryboardShot = async (shot: StoryboardShot):
     camera: CameraMovementData,
 }> => {
     try {
-        const response = await ai.models.generateContent({
+        const response = await ai!.models.generateContent({
             model: 'gemini-2.5-flash',
             contents: `You are a cinematic pre-visualization expert. Based on the following storyboard shot description, generate a complete set of initial visual parameters. Provide reasonable, professional starting points for a visual editor.
 
@@ -696,7 +766,7 @@ export const analyzeCharacter = async (
     dialogueSamples?: string
 ): Promise<CharacterAnalysis> => {
     try {
-        const response = await ai.models.generateContent({
+        const response = await ai!.models.generateContent({
             model: 'gemini-2.0-flash-exp',
             contents: `As a professional casting director, analyze this character and provide detailed casting specifications.
 
@@ -765,7 +835,7 @@ export const generateCastingSuggestions = async (
             ? "IMPORTANT: Prioritize diverse casting options across different ethnicities, body types, and backgrounds. Include at least 3-4 different ethnicity options."
             : "";
 
-        const response = await ai.models.generateContent({
+        const response = await ai!.models.generateContent({
             model: 'gemini-2.0-flash-exp',
             contents: `As a professional casting director committed to inclusive casting, provide 5-6 diverse casting suggestions for this character.
 
