@@ -18,6 +18,9 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
+  define: {
+    'import.meta.env.VITE_GOOGLE_API_KEY': JSON.stringify(process.env.GOOGLE_API_KEY || ''),
+  },
   build: {
     outDir: 'dist',
     assetsDir: 'assets',

@@ -13,9 +13,9 @@ import { API_CONFIG, NUMERIC } from '../constants';
 const getApiKey = () => {
   // Try multiple ways to get the API key
   return (
-    process.env.API_KEY ||
-    process.env.GOOGLE_API_KEY ||
-    process.env.GEMINI_API_KEY ||
+    import.meta.env.VITE_API_KEY ||
+    import.meta.env.VITE_GOOGLE_API_KEY ||
+    import.meta.env.VITE_GEMINI_API_KEY ||
     (typeof window !== 'undefined' ? (window as any).GEMINI_API_KEY : undefined)
   );
 };
