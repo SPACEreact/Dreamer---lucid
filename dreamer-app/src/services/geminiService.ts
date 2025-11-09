@@ -358,11 +358,65 @@ export const generateNanoImage = async (prompt: string, style: 'cinematic' | 'ex
     }
 };
 
+// Fallback storyboard generation when AI service is not available
+const generateFallbackStoryboard = (script: string, style: 'cinematic' | 'explainer' = 'cinematic'): StoryboardShot[] => {
+    const lines = script.split('\n').filter(line => line.trim().length > 0);
+    const shots: StoryboardShot[] = [];
+    
+    const shotTypes = ['Medium Shot', 'Close-Up', 'Wide Shot', 'Extreme Close-Up'];
+    const cameraAngles = ['eye-level witness', 'low angle power', 'high angle vulnerable', 'Dutch tilt tension'];
+    const lightingMoods = ['chiaroscuro contrast', 'golden hour warm', 'cool blue drama', 'harsh noon shadows'];
+    const cameraMovements = ['static contemplation', 'gentle dolly in', 'handheld intimacy', 'stealthy pan'];
+
+    lines.forEach((line, index) => {
+        if (line.trim() && !line.match(/^(INT\.|EXT\.|FADE|SCENE)/i)) {
+            const shotType = shotTypes[index % shotTypes.length];
+            const cameraAngle = cameraAngles[index % cameraAngles.length];
+            const lightingMood = lightingMoods[index % lightingMoods.length];
+            const cameraMovement = cameraMovements[index % cameraMovements.length];
+            
+            shots.push({
+                screenplayLine: line.trim(),
+                shotDetails: {
+                    shotType,
+                    cameraAngle,
+                    description: line.trim(),
+                    lightingMood,
+                    cameraMovement
+                }
+            });
+        }
+    });
+
+    // If no meaningful shots were created, create at least one default shot
+    if (shots.length === 0) {
+        shots.push({
+            screenplayLine: script,
+            shotDetails: {
+                shotType: "Medium Shot",
+                cameraAngle: "eye-level witness",
+                description: script,
+                lightingMood: "chiaroscuro contrast",
+                cameraMovement: "static contemplation"
+            }
+        });
+    }
+
+    return shots;
+};
+
 export const generateStoryboard = async (script: string, style: 'cinematic' | 'explainer' = 'cinematic', customInstructions: string = ''): Promise<StoryboardShot[]> => {
-    // Return early if AI service is not available
+    // Return fallback storyboard if AI service is not available
     if (!isAIServiceAvailable()) {
-        console.warn('Gemini AI service not available - no API key configured');
-        return [];
+        console.warn('Gemini AI service not available - using fallback storyboard generation');
+        const fallbackShots = generateFallbackStoryboard(script, style);
+        
+        // Add a warning message to the first shot for user awareness
+        if (fallbackShots.length > 0) {
+            fallbackShots[0].screenplayLine = `⚠️ AI Enhancement Unavailable - Basic Storyboard\n${fallbackShots[0].screenplayLine}`;
+        }
+        
+        return fallbackShots;
     }
     
     try {
