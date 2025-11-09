@@ -78,11 +78,11 @@ import {
     TextItem,
     CastingData,
 } from './types';
-import { CastingAssistant } from './components/CastingAssistant';
+// import { CastingAssistant } from './components/CastingAssistant'; // TODO: Implement CastingAssistant component
 import { VisualProgressTracker } from './components/VisualProgressTracker';
 import { StoryIdeation } from './components/StoryIdeation';
 import { ErrorBoundary } from './components/ErrorBoundary';
-import { generateImage, generateNanoImage } from './services/imageGenerationService';
+// import { generateImage, generateNanoImage } from './services/imageGenerationService'; // TODO: Implement image generation service
 import { 
     extractKnowledge, 
     getAISuggestions, 
@@ -1972,13 +1972,11 @@ const SelectedItemPanel: React.FC<SelectedItemPanelProps> = ({
                         {activeVisualTab === 'lighting' && <LightingEditor lighting={visualData.lighting} onChange={onLightingChange} />}
                         {activeVisualTab === 'color' && <ColorGradingEditor color={visualData.color} onChange={onColorChange} />}
                         {activeVisualTab === 'camera' && <CameraMovementEditor camera={visualData.camera} onChange={onCameraChange} onPathChange={onCameraPathChange}/>}
-                        {activeVisualTab === 'casting' && <CastingAssistant
-                            characters={visualData.composition.characters.map(c => c.name)}
-                            sceneDescription={shotData.description}
-                            onCastingDataUpdate={(data) => {
-                                setCastingData(prev => ({ ...prev, [item.id]: data }));
-                            }}
-                        />}
+                        {activeVisualTab === 'casting' && (
+                            <div className="text-center text-gray-400 p-8">
+                                <p>Casting Assistant feature coming soon...</p>
+                            </div>
+                        )}
                     </motion.div>
                 </AnimatePresence>
             </div>
@@ -2261,14 +2259,16 @@ const VisualSequenceEditor: React.FC<VisualSequenceEditorProps> = (props) => {
         setGeneratedContent(prev => ({...prev, [id]: {...(prev[id] || {images:{}}), status: 'loading'}}));
         try {
             const promptForGeneration = style === 'explainer' ? item.data.description : item.data.prompt;
-            const imageGenerator = type === 'photoreal' ? generateImage : generateNanoImage;
+            // TODO: Implement image generation service
+            // const imageGenerator = type === 'photoreal' ? generateImage : generateNanoImage;
             const currentAspectRatio = aspectRatios[id] || '16:9';
 
             let b64: string;
+            // Placeholder image generation - replace with actual implementation
             if (type === 'photoreal') {
-              b64 = await generateImage(promptForGeneration, currentAspectRatio, style);
+              b64 = 'data:image/svg+xml;base64,' + btoa(`<svg width="400" height="300" xmlns="http://www.w3.org/2000/svg"><rect width="100%" height="100%" fill="#1a1a2e"/><text x="200" y="150" font-family="Arial" font-size="16" fill="white" text-anchor="middle">Image generation coming soon...</text></svg>`);
             } else {
-              b64 = await generateNanoImage(promptForGeneration, style);
+              b64 = 'data:image/svg+xml;base64,' + btoa(`<svg width="400" height="300" xmlns="http://www.w3.org/2000/svg"><rect width="100%" height="100%" fill="#0f0f23"/><text x="200" y="150" font-family="Arial" font-size="14" fill="#4fc3f7" text-anchor="middle">Placeholder: ${promptForGeneration.substring(0, 50)}...</text></svg>`);
             }
 
             setGeneratedContent(prev => ({...prev, [id]: {
