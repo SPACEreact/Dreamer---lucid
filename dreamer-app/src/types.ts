@@ -178,37 +178,39 @@ export interface SequenceStyle {
   mood: string;
 }
 
-// Sound Design Module Types
-export type AudioMoodTag = 'ambient' | 'tense' | 'romantic' | 'epic' | 'mysterious' | 'action' | 'suspense';
+// Casting Assistant Types
+export type AgeRange = '18-25' | '26-35' | '36-45' | '46-55' | '56-65' | '65+';
+export type PhysicalBuild = 'slim' | 'athletic' | 'average' | 'muscular' | 'plus-size';
+export type Ethnicity = 'any' | 'caucasian' | 'african' | 'asian' | 'hispanic' | 'middle-eastern' | 'mixed';
+export type Gender = 'male' | 'female' | 'non-binary' | 'any';
 
-export interface SoundCategory {
-  id: string;
+export interface CharacterAnalysis {
   name: string;
-  type: 'environmental' | 'musical' | 'sfx' | 'atmospheric';
-  description: string;
-  mood: AudioMoodTag[];
+  ageRange: AgeRange;
+  gender: Gender;
+  ethnicity: Ethnicity[];
+  physicalTraits: {
+    height?: string;
+    build: PhysicalBuild;
+    distinctiveFeatures: string[];
+  };
+  personalityTraits: string[];
+  actingStyle: string[];
 }
 
-export interface AudioSuggestion {
-  id: string;
-  category: SoundCategory;
-  description: string;
-  duration: number;
-  mood: AudioMoodTag;
-}
-
-export interface FoleySuggestion {
+export interface CastingSuggestion {
   id: string;
   characterName: string;
-  soundEffect: string;
-  timing: string;
-  description: string;
+  suggestions: {
+    description: string;
+    ageRange: AgeRange;
+    physicalDescription: string;
+    actingNotes: string;
+    diversityConsideration: string;
+  }[];
 }
 
-export interface SoundDesignData {
-  mood: AudioMoodTag[];
-  categories: string[];
-  suggestions: AudioSuggestion[];
-  foley: FoleySuggestion[];
+export interface CastingData {
+  characters: CharacterAnalysis[];
+  suggestions: CastingSuggestion[];
 }
-

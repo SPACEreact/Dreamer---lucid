@@ -1,10 +1,10 @@
 /**
  * AI Module Collaboration Service
- * Enables communication and collaboration between sound design and visual modules
+ * Enables communication and collaboration between casting and visual modules
  */
 
 export interface ModuleInsight {
-  module: 'sound' | 'visual';
+  module: 'casting' | 'visual';
   insight: string;
   relevance: 'high' | 'medium' | 'low';
   actionable: boolean;
@@ -32,7 +32,7 @@ export class ModuleCollaborationService {
   }
 
   // Store insights from individual modules
-  addModuleInsight(module: 'sound' | 'visual', insight: string, relevance: 'high' | 'medium' | 'low' = 'medium', sharedData?: any): void {
+  addModuleInsight(module: 'casting' | 'visual', insight: string, relevance: 'high' | 'medium' | 'low' = 'medium', sharedData?: any): void {
     const newInsight: ModuleInsight = {
       module,
       insight,
@@ -51,70 +51,59 @@ export class ModuleCollaborationService {
 
   // Generate cross-module suggestions
   private analyzeCrossModuleSynergies(): void {
-    const soundInsights = this.insights.get('sound') || [];
+    const castingInsights = this.insights.get('casting') || [];
     const visualInsights = this.insights.get('visual') || [];
 
     this.crossModuleSuggestions = [];
 
-    // Sound-Visual Synergies
-    const soundVisualSync = this.findSoundVisualSync(soundInsights, visualInsights);
-    if (soundVisualSync) {
+    // Visual-Casting Balance
+    const visualCastingBalance = this.findVisualCastingBalance(visualInsights, castingInsights);
+    if (visualCastingBalance) {
       this.crossModuleSuggestions.push({
-        type: 'sync',
-        modules: ['sound', 'visual'],
-        ...soundVisualSync
+        type: 'balance',
+        modules: ['visual', 'casting'],
+        ...visualCastingBalance
       });
     }
 
-    const thematicEnhancement = this.findSoundVisualEnhancement(soundInsights, visualInsights);
-    if (thematicEnhancement) {
+    // Cross-module thematic alignment
+    const thematicAlignment = this.findCastingVisualAlignment(visualInsights, castingInsights);
+    if (thematicAlignment) {
       this.crossModuleSuggestions.push({
         type: 'enhance',
-        modules: ['sound', 'visual'],
-        ...thematicEnhancement
+        modules: ['visual', 'casting'],
+        ...thematicAlignment
       });
     }
   }
 
-  private findSoundVisualSync(soundInsights: ModuleInsight[], visualInsights: ModuleInsight[]) {
-    // Look for mood/tone matches between sound and visual
-    const soundMood = soundInsights.find(i => i.insight.includes('mood') || i.insight.includes('atmosphere'));
-    const visualMood = visualInsights.find(i => i.insight.includes('lighting') || i.insight.includes('color'));
+  private findVisualCastingBalance(visualInsights: ModuleInsight[], castingInsights: ModuleInsight[]) {
+    // Look for color schemes that complement character types
+    const warmVisual = visualInsights.find(i => i.insight.includes('warm') || i.insight.includes('golden'));
+    const seriousCharacter = castingInsights.find(i => i.insight.includes('serious') || i.insight.includes('professional'));
 
-    if (soundMood && visualMood) {
+    if (warmVisual && seriousCharacter) {
       return {
-        suggestion: 'Align sound atmosphere with visual mood for cohesive storytelling',
-        rationale: 'Both sound and visual elements suggest similar atmospheric qualities',
-        priority: 'high' as const
-      };
-    }
-
-    // Look for energy level matches
-    const soundEnergy = soundInsights.find(i => i.insight.includes('energy') || i.insight.includes('intensity'));
-    const visualEnergy = visualInsights.find(i => i.insight.includes('movement') || i.insight.includes('camera'));
-
-    if (soundEnergy && visualEnergy) {
-      return {
-        suggestion: 'Synchronize audio intensity with visual camera movement',
-        rationale: 'Both elements indicate matching energy levels for dynamic sequences',
-        priority: 'high' as const
+        suggestion: 'Balance serious character presence with warm visual color grading',
+        rationale: 'Warm colors can soften serious characters and create emotional depth',
+        priority: 'medium' as const
       };
     }
 
     return null;
   }
 
-  private findSoundVisualEnhancement(soundInsights: ModuleInsight[], visualInsights: ModuleInsight[]) {
-    // Look for overall theme coherence between sound and visual insights
+  private findCastingVisualAlignment(visualInsights: ModuleInsight[], castingInsights: ModuleInsight[]) {
+    // Look for overall theme coherence
     const themes = [
-      ...soundInsights.filter(i => i.insight.includes('theme') || i.insight.includes('emotion')),
+      ...castingInsights.filter(i => i.insight.includes('theme') || i.insight.includes('emotion')),
       ...visualInsights.filter(i => i.insight.includes('theme') || i.insight.includes('emotion'))
     ];
 
     if (themes.length >= 2) {
       return {
-        suggestion: 'Strengthen thematic coherence between audio and visual storytelling',
-        rationale: 'Both sound and visual modules highlight similar thematic or emotional cues',
+        suggestion: 'Strengthen thematic coherence between visual storytelling and casting choices',
+        rationale: 'Both modules highlight compatible emotional or thematic directions worth emphasizing',
         priority: 'high' as const
       };
     }
@@ -131,7 +120,7 @@ export class ModuleCollaborationService {
   }
 
   // Get insights from specific module
-  getModuleInsights(module: 'sound' | 'visual'): ModuleInsight[] {
+  getModuleInsights(module: 'casting' | 'visual'): ModuleInsight[] {
     return this.insights.get(module) || [];
   }
 
@@ -147,20 +136,20 @@ export class ModuleCollaborationService {
   }
 
   // Generate module-specific collaboration tips
-  generateCollaborationTips(module: 'sound' | 'visual'): string[] {
+  generateCollaborationTips(module: 'casting' | 'visual'): string[] {
     const tips: string[] = [];
 
     switch (module) {
-      case 'sound':
-        tips.push('Consider how your sound design will complement or contrast with visual lighting choices');
-        tips.push('Match character emotional states through both sound design and visual pacing');
-        tips.push('Use sound cues to enhance the visual focus and camera movement');
+      case 'casting':
+        tips.push('Consider visual style when selecting actors that fit the aesthetic mood');
+        tips.push('Share casting insights with visual designers to ensure character presentation feels cohesive');
+        tips.push('Highlight emotional beats so visual teams can reinforce them through lighting and composition');
         break;
 
       case 'visual':
-        tips.push('Coordinate visual mood with sound design for cohesive storytelling');
-        tips.push('Plan camera movement with accompanying audio intensity in mind');
-        tips.push('Use visual elements to support the narrative suggested by sound design motifs');
+        tips.push('Consider casting choices when developing visual character presentation');
+        tips.push('Use color and lighting cues that reinforce the emotional tone suggested by casting');
+        tips.push('Share visual motifs that could influence wardrobe and performance decisions');
         break;
     }
 

@@ -2,8 +2,8 @@
 
 
 
-import { GoogleGenAI, Type } from "@google/genai";
-import { ExtractedKnowledge, StoryboardShot, SequenceStyle, CompositionData, LightingData, ColorGradingData, CameraMovementData, CompositionCharacter, AudioMoodTag, AudioSuggestion, FoleySuggestion, CharacterAnalysis, CastingSuggestion } from "../types";
+import { GoogleGenAI, Modality, Type } from "@google/genai";
+import { ExtractedKnowledge, StoryboardShot, SequenceStyle, CompositionData, LightingData, ColorGradingData, CameraMovementData, CompositionCharacter, CharacterAnalysis, CastingSuggestion } from "../types";
 import { huggingFaceService } from "./huggingFaceService";
 import { geminiLogger } from '../lib/logger';
 import { handleAIServiceError, sanitizeErrorMessage } from '../lib/errorHandler';
@@ -225,6 +225,72 @@ export const generateStoryFromIdea = async (idea: string): Promise<string[]> => 
     } catch (error) {
         handleAIServiceError(error, 'Story Generation');
         return [];
+    }
+};
+
+export const generateImage = async (prompt: string, aspectRatio: string = '16:9', style: 'cinematic' | 'explainer' = 'cinematic'): Promise<string> => {
+    try {
+      const stylePrefix = style === 'explainer'
+        ? 'A clean, simple, engaging illustration for an explainer video. The style should be modern, with clear lines and friendly colors. Focus on communicating the core idea of the prompt clearly.'
+        : 'Create a cinematic, photorealistic image based on the following detailed prompt. Emphasize mood, lighting, and composition.';
+
+      const response = await ai.models.generateImages({
+        model: 'imagen-4.0-generate-001',
+        prompt: `${stylePrefix} ${prompt}`,
+        config: {
+          numberOfImages: 1,
+          outputMimeType: 'image/jpeg',
+          aspectRatio: aspectRatio,
+        },
+      });
+  
+      if (response.generatedImages && response.generatedImages.length > 0) {
+        return response.generatedImages[0].image.imageBytes;
+      } else {
+        throw new Error("No image was generated.");
+      }
+    } catch (error) {
+      handleAIServiceError(error, 'Image Generation');
+      throw new Error("Failed to generate image.");
+    }
+};
+
+export const generateNanoImage = async (prompt: string, style: 'cinematic' | 'explainer' = 'cinematic'): Promise<string> => {
+    try {
+        const stylePrefix = style === 'explainer'
+            ? 'A stylized, modern, and simple illustration for an explainer video. Focus on clarity, visual appeal, and effective communication of the core concept.'
+            : 'A cinematic, stylized image based on the following detailed prompt. Emphasize mood, lighting, and composition.';
+        
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash-image',
+            contents: {
+              parts: [{ text: `${stylePrefix} ${prompt}` }],
+            },
+            config: {
+                responseModalities: [Modality.IMAGE],
+            },
+        });
+
+        // Sanitize response before processing
+        if (!response.candidates || response.candidates.length === 0) {
+            throw new Error("No candidates returned from API");
+        }
+
+        const firstCandidate = response.candidates[0];
+        if (!firstCandidate.content || !firstCandidate.content.parts || firstCandidate.content.parts.length === 0) {
+            throw new Error("No content parts in response candidate");
+        }
+
+        for (const part of firstCandidate.content.parts) {
+            if (part.inlineData) {
+                return part.inlineData.data;
+            }
+        }
+        throw new Error("No image data found in response.");
+
+    } catch (error) {
+        handleAIServiceError(error, 'Nano Image Generation');
+        throw new Error("Failed to generate nano image.");
     }
 };
 
@@ -621,136 +687,139 @@ export const initializeVisualsFromStoryboardShot = async (shot: StoryboardShot):
 };
 
 // ========================================================================
-// SOUND DESIGN MODULE SERVICES
+// CASTING ASSISTANT SERVICES
 // ========================================================================
 
-export const analyzeSoundMood = async (sceneDescription: string, visualMood: string): Promise<AudioMoodTag[]> => {
-    try {
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: `As a professional sound designer, analyze this scene and suggest appropriate audio mood tags.
-
-SCENE DESCRIPTION:
-${sceneDescription}
-
-VISUAL MOOD:
-${visualMood}
-
-Choose 2-3 most fitting audio moods from: ambient, tense, romantic, epic, mysterious, action, suspense.
-Return only the mood tags as a JSON array of strings.`,
-            config: {
-                responseMimeType: "application/json",
-                responseSchema: {
-                    type: Type.ARRAY,
-                    items: { type: Type.STRING }
-                }
-            }
-        });
-        return JSON.parse(response.text.trim());
-    } catch (error) {
-        handleAIServiceError(error, 'Sound Mood Analysis');
-        return ['ambient'];
-    }
-};
-
-export const generateSoundSuggestions = async (
-    sceneDescription: string,
-    mood: AudioMoodTag[],
-    cameraMovement: string,
-    lighting: string
-): Promise<AudioSuggestion[]> => {
+export const analyzeCharacter = async (
+    characterName: string,
+    description: string,
+    dialogueSamples?: string
+): Promise<CharacterAnalysis> => {
     try {
         const response = await ai.models.generateContent({
             model: 'gemini-2.0-flash-exp',
-            contents: `As a professional sound designer, suggest 5-7 specific sound elements for this cinematic scene.
+            contents: `As a professional casting director, analyze this character and provide detailed casting specifications.
 
-SCENE DESCRIPTION: ${sceneDescription}
-AUDIO MOOD: ${mood.join(', ')}
-CAMERA MOVEMENT: ${cameraMovement}
-LIGHTING: ${lighting}
+CHARACTER NAME: ${characterName}
+DESCRIPTION: ${description}
+${dialogueSamples ? `DIALOGUE SAMPLES:\n${dialogueSamples}` : ''}
 
-For each sound suggestion, provide:
-- A unique ID (use timestamp-based)
-- Category (environmental, musical, sfx, atmospheric)
-- Detailed description of the sound
-- Duration in seconds
-- Primary mood tag
+Provide comprehensive character analysis including:
+- Age range (18-25, 26-35, 36-45, 46-55, 56-65, 65+)
+- Gender (male, female, non-binary, any)
+- Ethnicity options (provide array: caucasian, african, asian, hispanic, middle-eastern, mixed, any)
+- Physical traits (height description, build: slim/athletic/average/muscular/plus-size, distinctive features)
+- Personality traits (array of traits)
+- Acting style requirements (array of styles)
 
-Return as a JSON array.`,
+Return as structured JSON.`,
             config: {
                 responseMimeType: "application/json",
                 responseSchema: {
-                    type: Type.ARRAY,
-                    items: {
-                        type: Type.OBJECT,
-                        properties: {
-                            id: { type: Type.STRING },
-                            category: { type: Type.OBJECT, properties: {
-                                name: { type: Type.STRING },
-                                type: { type: Type.STRING }
-                            }},
-                            description: { type: Type.STRING },
-                            duration: { type: Type.NUMBER },
-                            mood: { type: Type.STRING }
-                        }
+                    type: Type.OBJECT,
+                    properties: {
+                        name: { type: Type.STRING },
+                        ageRange: { type: Type.STRING },
+                        gender: { type: Type.STRING },
+                        ethnicity: { type: Type.ARRAY, items: { type: Type.STRING } },
+                        physicalTraits: {
+                            type: Type.OBJECT,
+                            properties: {
+                                height: { type: Type.STRING },
+                                build: { type: Type.STRING },
+                                distinctiveFeatures: { type: Type.ARRAY, items: { type: Type.STRING } }
+                            }
+                        },
+                        personalityTraits: { type: Type.ARRAY, items: { type: Type.STRING } },
+                        actingStyle: { type: Type.ARRAY, items: { type: Type.STRING } }
                     }
                 },
-                thinkingConfig: { thinkingBudget: 4096 }
+                thinkingConfig: { thinkingBudget: 8192 }
             }
         });
         return JSON.parse(response.text.trim());
     } catch (error) {
-        handleAIServiceError(error, 'Sound Suggestions Generation');
-        return [];
+        handleAIServiceError(error, 'Character Analysis');
+        return {
+            name: characterName,
+            ageRange: '26-35',
+            gender: 'any',
+            ethnicity: ['any'],
+            physicalTraits: {
+                build: 'average',
+                distinctiveFeatures: []
+            },
+            personalityTraits: [],
+            actingStyle: []
+        };
     }
 };
 
-export const generateFoleySuggestions = async (
-    characters: string[],
-    sceneDescription: string,
-    actions: string
-): Promise<FoleySuggestion[]> => {
+export const generateCastingSuggestions = async (
+    character: CharacterAnalysis,
+    sceneContext: string,
+    diversityFocus: boolean = true
+): Promise<CastingSuggestion> => {
     try {
+        const diversityPrompt = diversityFocus 
+            ? "IMPORTANT: Prioritize diverse casting options across different ethnicities, body types, and backgrounds. Include at least 3-4 different ethnicity options."
+            : "";
+
         const response = await ai.models.generateContent({
             model: 'gemini-2.0-flash-exp',
-            contents: `As a professional foley artist, suggest specific sound effects for this scene.
+            contents: `As a professional casting director committed to inclusive casting, provide 5-6 diverse casting suggestions for this character.
 
-CHARACTERS: ${characters.join(', ')}
-SCENE: ${sceneDescription}
-ACTIONS: ${actions}
+CHARACTER ANALYSIS:
+${JSON.stringify(character, null, 2)}
 
-For each foley suggestion, provide:
-- ID (timestamp-based)
-- Character name
-- Sound effect description
-- Timing (e.g., "continuous", "at 2.5s", "during movement")
-- Detailed description
+SCENE CONTEXT:
+${sceneContext}
 
-Focus on character-specific sounds: footsteps, clothing rustle, object interactions, breathing, etc.
+${diversityPrompt}
 
-Return as a JSON array.`,
+For each casting suggestion, provide:
+- A detailed actor description (do NOT name real actors, describe archetype)
+- Age range
+- Physical description emphasizing diversity
+- Acting notes and approach
+- Specific diversity consideration (explain how this choice enhances representation)
+
+Return as structured JSON with an array of suggestions.`,
             config: {
                 responseMimeType: "application/json",
                 responseSchema: {
-                    type: Type.ARRAY,
-                    items: {
-                        type: Type.OBJECT,
-                        properties: {
-                            id: { type: Type.STRING },
-                            characterName: { type: Type.STRING },
-                            soundEffect: { type: Type.STRING },
-                            timing: { type: Type.STRING },
-                            description: { type: Type.STRING }
+                    type: Type.OBJECT,
+                    properties: {
+                        characterName: { type: Type.STRING },
+                        suggestions: {
+                            type: Type.ARRAY,
+                            items: {
+                                type: Type.OBJECT,
+                                properties: {
+                                    description: { type: Type.STRING },
+                                    ageRange: { type: Type.STRING },
+                                    physicalDescription: { type: Type.STRING },
+                                    actingNotes: { type: Type.STRING },
+                                    diversityConsideration: { type: Type.STRING }
+                                }
+                            }
                         }
                     }
                 },
-                thinkingConfig: { thinkingBudget: 4096 }
+                thinkingConfig: { thinkingBudget: 8192 }
             }
         });
-        return JSON.parse(response.text.trim());
+        const result = JSON.parse(response.text.trim());
+        return {
+            id: crypto.randomUUID(),
+            ...result
+        };
     } catch (error) {
-        handleAIServiceError(error, 'Foley Suggestions Generation');
-        return [];
+        handleAIServiceError(error, 'Casting Suggestions Generation');
+        return {
+            id: crypto.randomUUID(),
+            characterName: character.name,
+            suggestions: []
+        };
     }
 };
-

@@ -1,6 +1,6 @@
 import express from "express";
 import bodyParser from "body-parser";
-import soundRouter from "./routes/sound";
+import imageRouter from "./routes/image";
 import { errorHandler } from "./middleware/errorHandler";
 
 const app = express();
@@ -9,7 +9,7 @@ app.use(bodyParser.json({ limit: "10mb" }));
 app.use(bodyParser.urlencoded({ extended: true }));
 
 // API routes
-app.use("/api/sound", soundRouter);
+app.use("/api/image", imageRouter);
 
 // Health
 app.get("/health", (req, res) => res.status(200).json({ status: "ok" }));

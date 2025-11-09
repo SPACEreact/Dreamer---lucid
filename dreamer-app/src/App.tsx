@@ -28,9 +28,9 @@ import {
   Scissors,
   GripVertical,
   Palette,
+  Download,
   ChevronDown,
-  ExternalLink,
-  Loader2
+  ExternalLink
 } from 'lucide-react';
 import {
   questions,
@@ -76,12 +76,13 @@ import {
     BrollItem,
     TransitionItem,
     TextItem,
-    SoundDesignData,
+    CastingData,
 } from './types';
-import { SoundDesignModule } from './components/SoundDesignModule';
+import { CastingAssistant } from './components/CastingAssistant';
 import { VisualProgressTracker } from './components/VisualProgressTracker';
 import { StoryIdeation } from './components/StoryIdeation';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { generateImage, generateNanoImage } from './services/imageGenerationService';
 import { 
     extractKnowledge, 
     getAISuggestions, 
@@ -190,31 +191,9 @@ const AI_MODELS: AIModel[] = [
 ];
 
 // Format prompt for different AI models
-const formatPromptForModel = (promptSource: any, model: AIModel): string => {
-  let basePrompt = '';
-
-  if (typeof promptSource === 'string') {
-    basePrompt = promptSource;
-  } else if (promptSource?.shotDetails) {
-    const details = promptSource.shotDetails;
-    const segments = [
-      `${details?.shotType ?? ''} ${details?.cameraAngle ?? ''}`.trim(),
-      details?.description ?? '',
-      `${details?.lightingMood ?? ''} lighting`.trim(),
-      `${details?.cameraMovement ?? ''} camera movement`.trim()
-    ].filter(Boolean);
-    basePrompt = segments.join('. ').trim();
-    if (basePrompt && !basePrompt.endsWith('.')) {
-      basePrompt = `${basePrompt}.`;
-    }
-  } else if (typeof promptSource === 'object' && typeof promptSource?.prompt === 'string') {
-    basePrompt = promptSource.prompt;
-  }
-
-  if (!basePrompt) {
-    return '';
-  }
-
+const formatPromptForModel = (shot: any, model: AIModel): string => {
+  const basePrompt = `${shot.shotDetails.shotType} ${shot.shotDetails.cameraAngle}. ${shot.shotDetails.description}. ${shot.shotDetails.lightingMood} lighting. ${shot.shotDetails.cameraMovement} camera movement.`;
+  
   switch (model.id) {
     case 'midjourney':
     case 'bluewillow':
@@ -286,6 +265,15 @@ const getCameraLinePosition = (height: string, angle: string): { x1: number; y1:
     const x1 = centerX + anglePos.xOffset;
     const x2 = centerX + anglePos.xOffset;
     return { x1, y1: heightPos.y1, x2, y2: heightPos.y2 };
+};
+
+const downloadBase64Image = (base64Data: string, mimeType: string, filename: string) => {
+    const link = document.createElement('a');
+    link.href = `data:${mimeType};base64,${base64Data}`;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
 };
 
 const defaultComposition: CompositionData = { characters: [{ id: 'char-1', name: 'Subject A', x: 400, y: 225 }, { id: 'char-2', name: 'Subject B', x: 280, y: 260 }], cameraAngle: 'true-eye, honest', cameraHeight: 'eye-level witness' };
@@ -1678,60 +1666,26 @@ interface VisualSequenceEditorProps {
     setAspectRatios: React.Dispatch<React.SetStateAction<Record<string, string>>>;
     styles: Record<string, 'cinematic' | 'explainer'>;
     setStyles: React.Dispatch<React.SetStateAction<Record<string, 'cinematic' | 'explainer'>>>;
-    soundDesignData: Record<string, SoundDesignData>;
-    setSoundDesignData: React.Dispatch<React.SetStateAction<Record<string, SoundDesignData>>>;
+    castingData: Record<string, CastingData>;
+    setCastingData: React.Dispatch<React.SetStateAction<Record<string, CastingData>>>;
     deleteTimelineItem: (id: string) => void;
 }
 
 // #############################################################################################
 // COMPONENT: SelectedItemPanel (NEW FOR VISUAL SEQUENCE EDITOR)
 // #############################################################################################
-interface ShotGeneratedContent {
-    images: { photoreal?: string; stylized?: string };
-    enhancedPrompt?: string;
-    videoPrompt?: string;
-    status: 'idle' | 'loading' | 'error';
-    isEnhancing: boolean;
-    imageLoading: { photoreal: boolean; stylized: boolean };
-    isGeneratingVideoPrompt: boolean;
-}
-
-const createDefaultShotGeneratedContent = (): ShotGeneratedContent => ({
-    images: {},
-    status: 'idle',
-    isEnhancing: false,
-    imageLoading: { photoreal: false, stylized: false },
-    isGeneratingVideoPrompt: false,
-});
-
-const ensureShotGeneratedContent = (entry?: ShotGeneratedContent): ShotGeneratedContent => {
-    if (!entry) {
-        return createDefaultShotGeneratedContent();
-    }
-
-    return {
-        ...createDefaultShotGeneratedContent(),
-        ...entry,
-        images: entry.images ?? {},
-        imageLoading: {
-            photoreal: entry.imageLoading?.photoreal ?? false,
-            stylized: entry.imageLoading?.stylized ?? false,
-        },
-    };
-};
-
-const hasActiveLoading = (entry: ShotGeneratedContent): boolean =>
-    entry.isEnhancing || entry.imageLoading.photoreal || entry.imageLoading.stylized || entry.isGeneratingVideoPrompt;
-
 interface SelectedItemPanelProps {
     item: AnyTimelineItem;
     updateItem: (updatedItem: AnyTimelineItem) => void;
     onEnhance: (item: ShotItem) => void;
     onRevert: (item: ShotItem) => void;
+    onGenerateImage: (item: ShotItem, type: 'photoreal' | 'stylized') => void;
     onGenerateVideoPrompt: (item: ShotItem) => void;
     generatedContent: {
+        images: { photoreal?: string; stylized?: string };
         enhancedPrompt?: string;
         videoPrompt?: string;
+        status: 'idle' | 'loading' | 'error';
     };
     // Visual Editor Props
     compositions: Record<string, CompositionData>;
@@ -1744,55 +1698,23 @@ interface SelectedItemPanelProps {
     setAspectRatios: React.Dispatch<React.SetStateAction<Record<string, string>>>;
     styles: Record<string, 'cinematic' | 'explainer'>;
     setStyles: React.Dispatch<React.SetStateAction<Record<string, 'cinematic' | 'explainer'>>>;
-    // Sound Design Props
-    soundDesignData: Record<string, SoundDesignData>;
-    setSoundDesignData: React.Dispatch<React.SetStateAction<Record<string, SoundDesignData>>>;
+    // Casting Props
+    castingData: Record<string, CastingData>;
+    setCastingData: React.Dispatch<React.SetStateAction<Record<string, CastingData>>>;
 }
 
 
 const SelectedItemPanel: React.FC<SelectedItemPanelProps> = ({
-    item, updateItem, onEnhance, onRevert, onGenerateVideoPrompt, generatedContent,
+    item, updateItem, onEnhance, onRevert, onGenerateImage, onGenerateVideoPrompt, generatedContent,
     compositions, lightingData, colorGradingData, cameraMovement, updateVisuals, updatePromptFromVisuals,
     aspectRatios, setAspectRatios, styles, setStyles,
-    soundDesignData, setSoundDesignData
+    castingData, setCastingData
 }) => {
-    const [activeVisualTab, setActiveVisualTab] = useState<'composition' | 'lighting' | 'color' | 'camera' | 'sound' | 'casting'>('composition');
+    const [activeVisualTab, setActiveVisualTab] = useState<'composition' | 'lighting' | 'color' | 'camera' | 'casting'>('composition');
+    const [imageView, setImageView] = useState<'photoreal' | 'stylized'>('photoreal');
     const [isUpdatingPrompt, setIsUpdatingPrompt] = useState(false);
     const [copiedModel, setCopiedModel] = useState<string | null>(null);
     const [showCopyMenu, setShowCopyMenu] = useState(false);
-    const copyMenuRef = useRef<HTMLDivElement | null>(null);
-
-    useEffect(() => {
-        if (!showCopyMenu) return;
-
-        const handleClickOutside = (event: MouseEvent) => {
-            if (copyMenuRef.current && !copyMenuRef.current.contains(event.target as Node)) {
-                setShowCopyMenu(false);
-            }
-        };
-
-        document.addEventListener('mousedown', handleClickOutside);
-        return () => {
-            document.removeEventListener('mousedown', handleClickOutside);
-        };
-    }, [showCopyMenu]);
-
-    useEffect(() => {
-        setShowCopyMenu(false);
-        setCopiedModel(null);
-    }, [item.id, item.type]);
-
-    const isPhotorealLoading = generatedContent.imageLoading.photoreal;
-    const isStylizedLoading = generatedContent.imageLoading.stylized;
-    const isVideoPromptLoading = generatedContent.isGeneratingVideoPrompt;
-    const isImageLoading = isPhotorealLoading || isStylizedLoading;
-    const loadingMessage = generatedContent.isEnhancing
-        ? 'Enhancing prompt...'
-        : isImageLoading
-            ? 'Generating image...'
-            : isVideoPromptLoading
-                ? 'Generating video prompt...'
-                : 'Processing...';
 
     const handleUpdatePromptFromVisuals = async () => {
         setIsUpdatingPrompt(true);
@@ -1815,101 +1737,14 @@ const SelectedItemPanel: React.FC<SelectedItemPanelProps> = ({
     };
 
     if (item.type !== 'shot') {
-        const isPromptItem = item.type === 'b-roll';
-
         return (
-            <div className="flex-grow flex flex-col p-4 bg-gray-950 border border-gray-800 rounded-lg space-y-4">
-                <h2 className="text-xl font-semibold text-amber-400">
+            <div className="flex-grow flex flex-col p-4 bg-gray-950 border border-gray-800 rounded-lg">
+                 <h2 className="text-xl font-semibold text-amber-400 mb-2">
                     {item.type === 'b-roll' ? 'B-Roll Shot' : item.type === 'transition' ? 'Transition Note' : 'Title Card'}
                 </h2>
-
-                {isPromptItem && (
-                    <div className="flex flex-col md:flex-row md:items-start gap-4">
-                        <textarea
-                            value={item.prompt}
-                            onChange={e => updateItem({ ...item, prompt: e.target.value })}
-                            className="w-full md:flex-1 bg-gray-900 rounded p-3 text-gray-300 min-h-[160px]"
-                        />
-                        <div className="md:w-56 w-full flex md:block justify-end">
-                            <div className="relative w-full md:w-auto" ref={copyMenuRef}>
-                                <motion.button
-                                    whileHover={{ scale: 1.02 }}
-                                    whileTap={{ scale: 0.98 }}
-                                    onClick={() => setShowCopyMenu(prev => !prev)}
-                                    className="w-full md:w-auto px-3 py-2 text-sm rounded-lg bg-blue-500/20 text-blue-300 border border-blue-500/40 hover:bg-blue-500/30 flex items-center justify-center space-x-2"
-                                >
-                                    <ExternalLink className="w-4 h-4" />
-                                    <span>AI Models</span>
-                                    <ChevronDown className={`w-4 h-4 transition-transform ${showCopyMenu ? 'rotate-180' : ''}`} />
-                                </motion.button>
-
-                                <AnimatePresence>
-                                    {showCopyMenu && (
-                                        <motion.div
-                                            initial={{ opacity: 0, y: -4 }}
-                                            animate={{ opacity: 1, y: 0 }}
-                                            exit={{ opacity: 0, y: -4 }}
-                                            className="absolute right-0 top-full mt-2 w-64 bg-gray-900 border border-gray-700 rounded-lg shadow-xl z-50 max-h-80 overflow-y-auto"
-                                        >
-                                            <div className="p-3 border-b border-gray-700">
-                                                <p className="text-xs text-gray-300 font-medium">Copy for AI Image Generation</p>
-                                            </div>
-                                            {AI_MODELS.map(model => (
-                                                <motion.button
-                                                    key={model.id}
-                                                    whileHover={{ backgroundColor: 'rgba(55, 65, 81, 0.5)' }}
-                                                    onClick={async () => {
-                                                        const formattedPrompt = formatPromptForModel(item.prompt, model);
-                                                        if (!formattedPrompt) {
-                                                            return;
-                                                        }
-                                                        await navigator.clipboard.writeText(formattedPrompt);
-                                                        setCopiedModel(model.id);
-                                                        setTimeout(() => setCopiedModel(null), 1500);
-                                                        setShowCopyMenu(false);
-                                                    }}
-                                                    className="w-full px-4 py-3 text-left text-sm text-gray-300 hover:bg-gray-800 flex flex-col gap-1 group"
-                                                >
-                                                    <div className="flex items-center justify-between">
-                                                        <span className="font-medium text-white">{model.name}</span>
-                                                        {copiedModel === model.id ? (
-                                                            <span className="flex items-center gap-1 text-xs text-green-400">
-                                                                <Check className="w-3 h-3" />
-                                                                Copied!
-                                                            </span>
-                                                        ) : (
-                                                            <ExternalLink className="w-3 h-3 text-gray-400 group-hover:text-gray-300" />
-                                                        )}
-                                                    </div>
-                                                    <p className="text-xs text-gray-400">{model.description}</p>
-                                                    {model.website && (
-                                                        <p className="text-xs text-blue-400">{model.website}</p>
-                                                    )}
-                                                </motion.button>
-                                            ))}
-                                        </motion.div>
-                                    )}
-                                </AnimatePresence>
-                            </div>
-                        </div>
-                    </div>
-                )}
-
-                {item.type === 'transition' && (
-                    <textarea
-                        value={item.note}
-                        onChange={e => updateItem({ ...item, note: e.target.value })}
-                        className="w-full flex-grow bg-gray-900 rounded p-3 text-gray-300 min-h-[160px]"
-                    />
-                )}
-
-                {item.type === 'text' && (
-                    <textarea
-                        value={item.title}
-                        onChange={e => updateItem({ ...item, title: e.target.value })}
-                        className="w-full flex-grow bg-gray-900 rounded p-3 text-gray-300 min-h-[160px]"
-                    />
-                )}
+                {item.type === 'b-roll' && <textarea value={item.prompt} onChange={e => updateItem({...item, prompt: e.target.value})} className="w-full flex-grow bg-gray-900 rounded p-2 text-gray-300"/>}
+                {item.type === 'transition' && <textarea value={item.note} onChange={e => updateItem({...item, note: e.target.value})} className="w-full flex-grow bg-gray-900 rounded p-2 text-gray-300"/>}
+                {item.type === 'text' && <textarea value={item.title} onChange={e => updateItem({...item, title: e.target.value})} className="w-full flex-grow bg-gray-900 rounded p-2 text-gray-300"/>}
             </div>
         );
     }
@@ -1953,115 +1788,153 @@ const SelectedItemPanel: React.FC<SelectedItemPanelProps> = ({
                    {isModified && (
                         <motion.button title="Revert to Original Prompt" whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }} onClick={() => onRevert(shotItem)} className="p-2.5 md:p-3 bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors"><RefreshCcw className="w-4 h-4 md:w-5 md:h-5 text-amber-400"/></motion.button>
                    )}
-                   <motion.button
-                        title="Enhance with AI"
-                        whileHover={{ scale: 1.1 }}
-                        whileTap={{ scale: 0.9 }}
-                        onClick={() => onEnhance(shotItem)}
-                        disabled={generatedContent.isEnhancing}
-                        className="p-2.5 md:p-3 bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
-                    >
-                        {generatedContent.isEnhancing ? (
-                            <Loader2 className="w-4 h-4 md:w-5 md:h-5 text-purple-300 animate-spin" />
-                        ) : (
-                            <WandSparkles className="w-4 h-4 md:w-5 md:h-5 text-purple-400" />
-                        )}
-                    </motion.button>
+                   <motion.button title="Enhance with AI" whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }} onClick={() => onEnhance(shotItem)} className="p-2.5 md:p-3 bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors"><WandSparkles className="w-4 h-4 md:w-5 md:h-5 text-purple-400"/></motion.button>
                 </div>
             </div>
 
             {/* Prompt & Generated Content */}
-            <div className="space-y-4 flex flex-col">
-                <div className="flex items-center justify-between">
-                    <h3 className="text-base md:text-lg font-semibold text-gray-300">Cinematic Prompt</h3>
-                    {/* Copy Prompt Dropdown */}
-                    <div className="relative">
-                        <motion.button
-                            whileHover={{ scale: 1.05 }}
-                            whileTap={{ scale: 0.95 }}
-                            onClick={() => setShowCopyMenu(!showCopyMenu)}
-                            className="flex items-center space-x-2 px-3 py-2 bg-gray-800 hover:bg-gray-700 text-amber-400 rounded-lg transition-colors text-sm"
-                            title="Copy prompt for AI models"
-                        >
-                            <ClipboardCopy className="w-4 h-4" />
-                            <span className="hidden sm:inline">Copy For AI</span>
-                            <ChevronDown className={`w-3 h-3 transition-transform ${showCopyMenu ? 'rotate-180' : ''}`} />
-                        </motion.button>
-                        <AnimatePresence>
-                            {showCopyMenu && (
-                                <motion.div
-                                    initial={{ opacity: 0, y: -10 }}
-                                    animate={{ opacity: 1, y: 0 }}
-                                    exit={{ opacity: 0, y: -10 }}
-                                    className="absolute right-0 mt-2 w-64 bg-gray-900 border border-gray-700 rounded-lg shadow-xl z-50 max-h-96 overflow-y-auto"
-                                    onClick={(e) => e.stopPropagation()}
-                                >
-                                    <div className="p-2 border-b border-gray-800">
-                                        <p className="text-xs text-gray-400 px-2 py-1">Copy prompt formatted for:</p>
-                                    </div>
-                                    <div className="p-2 space-y-1">
-                                        {AI_MODELS.map(model => (
-                                            <button
-                                                key={model.id}
-                                                onClick={() => {
-                                                    handleCopyPromptForModel(model, shotItem);
-                                                    setShowCopyMenu(false);
-                                                }}
-                                                className="w-full flex items-center justify-between px-3 py-2.5 hover:bg-gray-800 rounded-lg transition-colors group"
-                                            >
-                                                <div className="flex-grow text-left">
-                                                    <p className="text-sm font-medium text-white">{model.name}</p>
-                                                    <p className="text-xs text-gray-400">{model.description}</p>
-                                                </div>
-                                                {copiedModel === model.id ? (
-                                                    <Check className="w-4 h-4 text-green-400 flex-shrink-0 ml-2" />
-                                                ) : model.website ? (
-                                                    <ExternalLink className="w-3 h-3 text-gray-600 group-hover:text-amber-400 flex-shrink-0 ml-2" />
-                                                ) : (
-                                                    <Copy className="w-3 h-3 text-gray-600 group-hover:text-amber-400 flex-shrink-0 ml-2" />
-                                                )}
-                                            </button>
-                                        ))}
-                                    </div>
-                                </motion.div>
-                            )}
-                        </AnimatePresence>
-                    </div>
-                </div>
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                    <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-xs uppercase tracking-wide text-gray-500">Style Mode</span>
-                        <div className="bg-gray-800 border border-gray-700 rounded p-0.5 flex text-xs">
-                            <button onClick={() => setCurrentStyle('cinematic')} className={`px-3 py-1.5 rounded transition-colors ${currentStyle === 'cinematic' ? 'bg-amber-500 text-black font-semibold' : 'text-gray-300 hover:bg-gray-700'}`}>
-                                Cinematic
-                            </button>
-                            <button onClick={() => setCurrentStyle('explainer')} className={`px-3 py-1.5 rounded transition-colors ${currentStyle === 'explainer' ? 'bg-amber-500 text-black font-semibold' : 'text-gray-300 hover:bg-gray-700'}`}>
-                                Explainer
-                            </button>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 md:gap-8">
+                {/* Prompt Text Area */}
+                <div className="space-y-4 flex flex-col">
+                    <div className="flex items-center justify-between">
+                        <h3 className="text-base md:text-lg font-semibold text-gray-300">Cinematic Prompt</h3>
+                        {/* Copy Prompt Dropdown */}
+                        <div className="relative">
+                            <motion.button
+                                whileHover={{ scale: 1.05 }}
+                                whileTap={{ scale: 0.95 }}
+                                onClick={() => setShowCopyMenu(!showCopyMenu)}
+                                className="flex items-center space-x-2 px-3 py-2 bg-gray-800 hover:bg-gray-700 text-amber-400 rounded-lg transition-colors text-sm"
+                                title="Copy prompt for AI models"
+                            >
+                                <ClipboardCopy className="w-4 h-4" />
+                                <span className="hidden sm:inline">Copy For AI</span>
+                                <ChevronDown className={`w-3 h-3 transition-transform ${showCopyMenu ? 'rotate-180' : ''}`} />
+                            </motion.button>
+                            <AnimatePresence>
+                                {showCopyMenu && (
+                                    <motion.div
+                                        initial={{ opacity: 0, y: -10 }}
+                                        animate={{ opacity: 1, y: 0 }}
+                                        exit={{ opacity: 0, y: -10 }}
+                                        className="absolute right-0 mt-2 w-64 bg-gray-900 border border-gray-700 rounded-lg shadow-xl z-50 max-h-96 overflow-y-auto"
+                                        onClick={(e) => e.stopPropagation()}
+                                    >
+                                        <div className="p-2 border-b border-gray-800">
+                                            <p className="text-xs text-gray-400 px-2 py-1">Copy prompt formatted for:</p>
+                                        </div>
+                                        <div className="p-2 space-y-1">
+                                            {AI_MODELS.map(model => (
+                                                <button
+                                                    key={model.id}
+                                                    onClick={() => {
+                                                        handleCopyPromptForModel(model, shotItem);
+                                                        setShowCopyMenu(false);
+                                                    }}
+                                                    className="w-full flex items-center justify-between px-3 py-2.5 hover:bg-gray-800 rounded-lg transition-colors group"
+                                                >
+                                                    <div className="flex-grow text-left">
+                                                        <p className="text-sm font-medium text-white">{model.name}</p>
+                                                        <p className="text-xs text-gray-400">{model.description}</p>
+                                                    </div>
+                                                    {copiedModel === model.id ? (
+                                                        <Check className="w-4 h-4 text-green-400 flex-shrink-0 ml-2" />
+                                                    ) : model.website ? (
+                                                        <ExternalLink className="w-3 h-3 text-gray-600 group-hover:text-amber-400 flex-shrink-0 ml-2" />
+                                                    ) : (
+                                                        <Copy className="w-3 h-3 text-gray-600 group-hover:text-amber-400 flex-shrink-0 ml-2" />
+                                                    )}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </motion.div>
+                                )}
+                            </AnimatePresence>
                         </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                        <span className="text-xs uppercase tracking-wide text-gray-500">Aspect Ratio</span>
-                        <select
-                            value={aspectRatios[item.id] || '16:9'}
-                            onChange={(e) => setAspectRatios(prev => ({ ...prev, [item.id]: e.target.value }))}
-                            className="bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-xs text-white focus:outline-none focus:border-amber-500 transition-colors"
-                        >
-                            <option value="16:9">16:9</option>
-                            <option value="9:16">9:16</option>
-                            <option value="1:1">1:1</option>
-                            <option value="4:3">4:3</option>
-                            <option value="3:4">3:4</option>
-                        </select>
+                    <textarea 
+                        value={shotData.prompt}
+                        onChange={e => updateItem({ ...item, data: { ...shotData, prompt: e.target.value }})}
+                        className="w-full flex-grow min-h-[200px] md:min-h-[250px] bg-gray-900 border border-gray-700 rounded-lg p-4 md:p-5 text-sm md:text-base text-gray-200 resize-none focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-500/20 transition-all leading-relaxed"
+                        placeholder="Enter your cinematic prompt here..."
+                    />
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <button onClick={() => onGenerateImage(shotItem, 'photoreal')} className="py-3 md:py-3.5 text-sm md:text-base bg-blue-500/20 text-blue-300 rounded-lg hover:bg-blue-500/30 flex items-center justify-center space-x-2 transition-colors font-medium"><ImageIcon className="w-4 h-4 md:w-5 md:h-5"/><span>Generate Photoreal</span></button>
+                        <button onClick={() => onGenerateImage(shotItem, 'stylized')} className="py-3 md:py-3.5 text-sm md:text-base bg-teal-500/20 text-teal-300 rounded-lg hover:bg-teal-500/30 flex items-center justify-center space-x-2 transition-colors font-medium"><Palette className="w-4 h-4 md:w-5 md:h-5"/><span>Generate Stylized</span></button>
+                    </div>
+                     <button onClick={() => onGenerateVideoPrompt(shotItem)} className="w-full py-3 md:py-3.5 text-sm md:text-base bg-purple-500/20 text-purple-300 rounded-lg hover:bg-purple-500/30 flex items-center justify-center space-x-2 transition-colors font-medium"><Film className="w-4 h-4 md:w-5 md:h-5"/><span>Generate Video Prompt</span></button>
+                </div>
+                 {/* Generated Content Area */}
+                 <div className="space-y-4 flex flex-col">
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                         <h3 className="text-base md:text-lg font-semibold text-gray-300">Generated Content</h3>
+                         <div className="flex flex-wrap items-center gap-2">
+                            <div className="bg-gray-800 border border-gray-700 rounded p-0.5 flex text-xs">
+                                <button onClick={() => setCurrentStyle('cinematic')} className={`px-3 py-1.5 rounded transition-colors ${currentStyle === 'cinematic' ? 'bg-amber-500 text-black font-semibold' : 'text-gray-300 hover:bg-gray-700'}`}>
+                                    Cinematic
+                                </button>
+                                <button onClick={() => setCurrentStyle('explainer')} className={`px-3 py-1.5 rounded transition-colors ${currentStyle === 'explainer' ? 'bg-amber-500 text-black font-semibold' : 'text-gray-300 hover:bg-gray-700'}`}>
+                                    Explainer
+                                </button>
+                            </div>
+                            <select 
+                                value={aspectRatios[item.id] || '16:9'} 
+                                onChange={(e) => setAspectRatios(prev => ({ ...prev, [item.id]: e.target.value }))}
+                                className="bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-xs text-white focus:outline-none focus:border-amber-500 transition-colors"
+                            >
+                                <option value="16:9">16:9</option>
+                                <option value="9:16">9:16</option>
+                                <option value="1:1">1:1</option>
+                                <option value="4:3">4:3</option>
+                                <option value="3:4">3:4</option>
+                            </select>
+                         </div>
+                    </div>
+                    <div className="w-full flex-grow min-h-[250px] md:min-h-[300px] bg-gray-900 border border-gray-700 rounded-lg p-3 md:p-4 flex items-center justify-center relative group">
+                        {generatedContent.status === 'loading' && (
+                            <div className="flex flex-col items-center space-y-3">
+                                <div className="w-8 h-8 animate-spin rounded-full border-3 border-gray-400 border-t-amber-400" />
+                                <p className="text-sm text-gray-400">Generating image...</p>
+                            </div>
+                        )}
+                        {generatedContent.status === 'error' && (
+                            <div className="flex flex-col items-center space-y-2">
+                                <p className="text-red-400 text-sm md:text-base font-medium">Generation Failed</p>
+                                <p className="text-xs text-gray-500">Please try again or check console for details</p>
+                            </div>
+                        )}
+                        {generatedContent.status === 'idle' && generatedContent.images[imageView] && (
+                            <>
+                                <img src={imageView === 'photoreal' ? `data:image/jpeg;base64,${generatedContent.images.photoreal}` : `data:image/png;base64,${generatedContent.images.stylized}`} className="max-w-full max-h-full object-contain rounded" alt="Generated scene"/>
+                                <motion.button
+                                    whileHover={{ scale: 1.1 }}
+                                    whileTap={{ scale: 0.9 }}
+                                    onClick={() => {
+                                        const base64Data = generatedContent.images[imageView]!;
+                                        const mimeType = imageView === 'photoreal' ? 'image/jpeg' : 'image/png';
+                                        const extension = imageView === 'photoreal' ? 'jpg' : 'png';
+                                        const filename = `dreamer-shot-${shotData.shotNumber}-${imageView}.${extension}`;
+                                        downloadBase64Image(base64Data, mimeType, filename);
+                                    }}
+                                    className="absolute top-3 right-3 p-2.5 md:p-3 bg-gray-900/80 hover:bg-gray-900/95 backdrop-blur-sm rounded-full opacity-0 group-hover:opacity-100 transition-all shadow-lg"
+                                    title="Download Image"
+                                >
+                                    <Download className="w-4 h-4 md:w-5 md:h-5 text-white" />
+                                </motion.button>
+                            </>
+                        )}
+                         {generatedContent.status === 'idle' && !generatedContent.images[imageView] && (
+                            <div className="text-center space-y-2">
+                                <p className="text-gray-500 text-sm md:text-base">{imageView === 'photoreal' ? 'Photoreal' : 'Stylized'} image will appear here</p>
+                                <p className="text-xs text-gray-600">Click generate button to create</p>
+                            </div>
+                        )}
+                     </div>
+                     <div className="flex justify-center gap-3">
+                        {generatedContent.images.photoreal && <button onClick={() => setImageView('photoreal')} className={`px-4 py-2 text-sm rounded-lg transition-colors ${imageView === 'photoreal' ? 'bg-blue-500 text-white font-medium' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}`}>Photoreal</button>}
+                        {generatedContent.images.stylized && <button onClick={() => setImageView('stylized')} className={`px-4 py-2 text-sm rounded-lg transition-colors ${imageView === 'stylized' ? 'bg-teal-500 text-white font-medium' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}`}>Stylized</button>}
                     </div>
                 </div>
-                <textarea
-                    value={shotData.prompt}
-                    onChange={e => updateItem({ ...item, data: { ...shotData, prompt: e.target.value }})}
-                    className="w-full flex-grow min-h-[200px] md:min-h-[250px] bg-gray-900 border border-gray-700 rounded-lg p-4 md:p-5 text-sm md:text-base text-gray-200 resize-none focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-500/20 transition-all leading-relaxed"
-                    placeholder="Enter your cinematic prompt here..."
-                />
-                <button onClick={() => onGenerateVideoPrompt(shotItem)} className="w-full py-3 md:py-3.5 text-sm md:text-base bg-purple-500/20 text-purple-300 rounded-lg hover:bg-purple-500/30 flex items-center justify-center space-x-2 transition-colors font-medium"><Film className="w-4 h-4 md:w-5 md:h-5"/><span>Generate Video Prompt</span></button>
             </div>
 
             {/* Visual Editor */}
@@ -2078,7 +1951,7 @@ const SelectedItemPanel: React.FC<SelectedItemPanelProps> = ({
                     </button>
                  </div>
                  <div className="flex items-center space-x-2 mb-2 border-b border-gray-800 overflow-x-auto">
-                    {(['composition', 'lighting', 'color', 'camera', 'sound'] as const).map(tab => (
+                    {(['composition', 'lighting', 'color', 'camera', 'casting'] as const).map(tab => (
                         <button key={tab} onClick={() => setActiveVisualTab(tab)} className={`px-4 py-2 text-sm capitalize rounded-t-lg transition-colors whitespace-nowrap ${activeVisualTab === tab ? 'bg-gray-800 text-amber-400' : 'text-gray-400 hover:bg-gray-900'}`}>
                             {tab}
                         </button>
@@ -2099,14 +1972,11 @@ const SelectedItemPanel: React.FC<SelectedItemPanelProps> = ({
                         {activeVisualTab === 'lighting' && <LightingEditor lighting={visualData.lighting} onChange={onLightingChange} />}
                         {activeVisualTab === 'color' && <ColorGradingEditor color={visualData.color} onChange={onColorChange} />}
                         {activeVisualTab === 'camera' && <CameraMovementEditor camera={visualData.camera} onChange={onCameraChange} onPathChange={onCameraPathChange}/>}
-                        {activeVisualTab === 'sound' && <SoundDesignModule
-                            sceneDescription={shotData.description}
-                            visualMood={visualData.lighting.mood}
+                        {activeVisualTab === 'casting' && <CastingAssistant
                             characters={visualData.composition.characters.map(c => c.name)}
-                            cameraMovement={visualData.camera.movementType}
-                            lighting={visualData.lighting.mood}
-                            onSoundDataUpdate={(data) => {
-                                setSoundDesignData(prev => ({ ...prev, [item.id]: data }));
+                            sceneDescription={shotData.description}
+                            onCastingDataUpdate={(data) => {
+                                setCastingData(prev => ({ ...prev, [item.id]: data }));
                             }}
                         />}
                     </motion.div>
@@ -2132,8 +2002,8 @@ const VisualSequenceEditor: React.FC<VisualSequenceEditorProps> = (props) => {
         setAspectRatios,
         styles,
         setStyles,
-        soundDesignData,
-        setSoundDesignData,
+        castingData,
+        setCastingData,
         deleteTimelineItem,
     } = props;
     
@@ -2146,11 +2016,6 @@ const VisualSequenceEditor: React.FC<VisualSequenceEditorProps> = (props) => {
     const [showVideoPromptModal, setShowVideoPromptModal] = useState<ShotItem | null>(null);
     const [videoPromptInstructions, setVideoPromptInstructions] = useState("");
     const [videoPromptCopied, setVideoPromptCopied] = useState(false);
-    const modalGeneratedContent = showVideoPromptModal
-        ? ensureShotGeneratedContent(generatedContent[showVideoPromptModal.id])
-        : null;
-    const isVideoPromptModalGenerating = modalGeneratedContent?.isGeneratingVideoPrompt ?? false;
-    const modalVideoPrompt = modalGeneratedContent?.videoPrompt;
     
     // Auto-scroll functionality for timeline items
     const timelineContainerRef = useRef<HTMLDivElement>(null);
@@ -2238,8 +2103,10 @@ const VisualSequenceEditor: React.FC<VisualSequenceEditorProps> = (props) => {
     
     // State for generated content, keyed by timeline item ID
     const [generatedContent, setGeneratedContent] = useState<Record<string, {
+        images: { photoreal?: string; stylized?: string };
         enhancedPrompt?: string;
         videoPrompt?: string;
+        status: 'idle' | 'loading' | 'error';
     }>>({});
 
     const activeItem = useMemo(() => timelineItems.find(item => item.id === activeTimelineItemId), [timelineItems, activeTimelineItemId]);
@@ -2373,19 +2240,14 @@ const VisualSequenceEditor: React.FC<VisualSequenceEditorProps> = (props) => {
 
     const handleEnhance = async (item: ShotItem) => {
         const id = item.id;
+        setGeneratedContent(prev => ({...prev, [id]: {...(prev[id] || {images:{}}), status: 'loading'}}));
         try {
             const context = timelineItems.map(i => i.type === 'shot' ? `Shot ${(i as ShotItem).data.shotNumber}: ${(i as ShotItem).data.description}` : '').join('\n');
             const enhanced = await enhanceShotPrompt(item.data.prompt, context);
             updateShotData(id, { prompt: enhanced });
-            setGeneratedContent(prev => ({
-                ...prev,
-                [id]: {
-                    ...(prev[id] || {}),
-                    enhancedPrompt: enhanced
-                }
-            }));
+            setGeneratedContent(prev => ({...prev, [id]: {...(prev[id] || {images:{}}), status: 'idle', enhancedPrompt: enhanced}}));
         } catch (e) {
-            handleAIServiceError(e, 'Shot Enhancement');
+            setGeneratedContent(prev => ({...prev, [id]: {...(prev[id] || {images:{}}), status: 'error'}}));
         }
     };
 
@@ -2393,23 +2255,45 @@ const VisualSequenceEditor: React.FC<VisualSequenceEditorProps> = (props) => {
         updateShotData(item.id, { prompt: item.data.originalPrompt });
     };
 
+    const handleGenerateImage = async (item: ShotItem, type: 'photoreal' | 'stylized') => {
+        const id = item.id;
+        const style = styles[id] || 'cinematic';
+        setGeneratedContent(prev => ({...prev, [id]: {...(prev[id] || {images:{}}), status: 'loading'}}));
+        try {
+            const promptForGeneration = style === 'explainer' ? item.data.description : item.data.prompt;
+            const imageGenerator = type === 'photoreal' ? generateImage : generateNanoImage;
+            const currentAspectRatio = aspectRatios[id] || '16:9';
+
+            let b64: string;
+            if (type === 'photoreal') {
+              b64 = await generateImage(promptForGeneration, currentAspectRatio, style);
+            } else {
+              b64 = await generateNanoImage(promptForGeneration, style);
+            }
+
+            setGeneratedContent(prev => ({...prev, [id]: {
+                ...(prev[id] || {images:{}}),
+                status: 'idle',
+                images: {...prev[id]?.images, [type]: b64}
+            }}));
+        } catch (e) {
+            setGeneratedContent(prev => ({...prev, [id]: {...(prev[id] || {images:{}}), status: 'error'}}));
+        }
+    };
+
     const handleGenerateVideoPrompt = async () => {
         if (!showVideoPromptModal) return;
         const item = showVideoPromptModal;
         const id = item.id;
+        setGeneratedContent(prev => ({...prev, [id]: {...(prev[id] || {images:{}}), status: 'loading'}}));
         setShowVideoPromptModal(null);
         try {
-            const videoPrompt = await generateVideoPrompt(item.data.prompt, undefined, videoPromptInstructions);
-            setGeneratedContent(prev => ({
-                ...prev,
-                [id]: {
-                    ...(prev[id] || {}),
-                    videoPrompt
-                }
-            }));
+            const image = generatedContent[id]?.images?.photoreal ? { base64: generatedContent[id].images.photoreal!, mimeType: 'image/jpeg' } : undefined;
+            const videoPrompt = await generateVideoPrompt(item.data.prompt, image, videoPromptInstructions);
+            setGeneratedContent(prev => ({...prev, [id]: {...(prev[id] || {images:{}}), status: 'idle', videoPrompt: videoPrompt}}));
             setVideoPromptInstructions("");
         } catch (e) {
-            handleAIServiceError(e, 'Video Prompt Generation');
+            setGeneratedContent(prev => ({...prev, [id]: {...(prev[id] || {images:{}}), status: 'error'}}));
         }
     };
 
@@ -2490,8 +2374,9 @@ const VisualSequenceEditor: React.FC<VisualSequenceEditorProps> = (props) => {
                                 updateItem={updateItemState}
                                 onEnhance={handleEnhance}
                                 onRevert={handleRevert}
+                                onGenerateImage={handleGenerateImage}
                                 onGenerateVideoPrompt={(item) => { setVideoPromptInstructions(''); setShowVideoPromptModal(item); }}
-                                generatedContent={generatedContent[activeItem.id] || {}}
+                                generatedContent={generatedContent[activeItem.id] || { images: {}, status: 'idle' }}
                                 compositions={compositions}
                                 lightingData={lightingData}
                                 colorGradingData={colorGradingData}
@@ -2502,9 +2387,9 @@ const VisualSequenceEditor: React.FC<VisualSequenceEditorProps> = (props) => {
                                 setAspectRatios={setAspectRatios}
                                 styles={styles}
                                 setStyles={setStyles}
-                                soundDesignData={soundDesignData}
-                                setSoundDesignData={setSoundDesignData}
-                            />
+                                castingData={castingData}
+                                setCastingData={setCastingData}
+                           />
                         ) : (
                             <div className="flex-grow flex items-center justify-center text-gray-500 bg-gray-950/70 border border-gray-800 rounded-xl">
                                 <p className="text-lg">Select an item on the timeline to begin.</p>
@@ -2688,44 +2573,15 @@ const VisualSequenceEditor: React.FC<VisualSequenceEditorProps> = (props) => {
                 </div>
             </div>
              {showVideoPromptModal && (
-                <motion.div
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0 }}
-                    className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center p-4 z-50"
-                    onClick={() => {
-                        if (!isVideoPromptModalGenerating) {
-                            setShowVideoPromptModal(null);
-                        }
-                    }}
-                >
+                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center p-4 z-50" onClick={() => setShowVideoPromptModal(null)}>
                     <motion.div initial={{ scale: 0.9 }} animate={{ scale: 1 }} exit={{ scale: 0.9 }} className="bg-gray-900 border border-gray-800 rounded-lg p-6 max-w-lg w-full" onClick={(e) => e.stopPropagation()}>
                         <h3 className="text-xl font-semibold mb-4">Generate Video Prompt for Shot {showVideoPromptModal.data.shotNumber}</h3>
                         <textarea value={videoPromptInstructions} onChange={(e) => setVideoPromptInstructions(e.target.value)} placeholder="Optional: describe desired camera movement or action..." className="w-full h-24 p-3 bg-gray-800 border border-gray-700 rounded-lg text-white mb-4" />
                         <div className="flex space-x-2">
-                             <motion.button
-                                onClick={() => setShowVideoPromptModal(null)}
-                                disabled={isVideoPromptModalGenerating}
-                                className="flex-1 py-3 bg-gray-800 hover:bg-gray-700 text-white rounded-lg disabled:opacity-60 disabled:cursor-not-allowed"
-                             >
-                                Cancel
-                             </motion.button>
-                             <motion.button
-                                onClick={handleGenerateVideoPrompt}
-                                disabled={isVideoPromptModalGenerating}
-                                className="flex-1 py-3 bg-amber-500 text-black rounded-lg flex items-center justify-center space-x-2 disabled:opacity-60 disabled:cursor-not-allowed"
-                             >
-                                {isVideoPromptModalGenerating ? (
-                                    <>
-                                        <Loader2 className="w-4 h-4 animate-spin" />
-                                        <span>Generating...</span>
-                                    </>
-                                ) : (
-                                    <span>Generate</span>
-                                )}
-                             </motion.button>
+                             <motion.button onClick={() => setShowVideoPromptModal(null)} className="flex-1 py-3 bg-gray-800 hover:bg-gray-700 text-white rounded-lg">Cancel</motion.button>
+                             <motion.button onClick={handleGenerateVideoPrompt} className="flex-1 py-3 bg-amber-500 text-black rounded-lg">Generate</motion.button>
                         </div>
-                        {modalVideoPrompt && (
+                        {generatedContent[showVideoPromptModal.id]?.videoPrompt && (
                             <div className="relative mt-4 bg-gray-800 p-3 rounded text-sm text-gray-200">
                                 <motion.button
                                     whileHover={{ scale: 1.1 }}
@@ -2736,7 +2592,7 @@ const VisualSequenceEditor: React.FC<VisualSequenceEditorProps> = (props) => {
                                 >
                                     {videoPromptCopied ? <Check className="w-4 h-4 text-green-400" /> : <ClipboardCopy className="w-4 h-4 text-gray-300" />}
                                 </motion.button>
-                                {modalVideoPrompt}
+                                {generatedContent[showVideoPromptModal.id]?.videoPrompt}
                             </div>
                         )}
                     </motion.div>
@@ -2775,8 +2631,8 @@ export default function App() {
     const [aspectRatios, setAspectRatios] = useState<Record<string, string>>({});
     const [styles, setStyles] = useState<Record<string, 'cinematic' | 'explainer'>>({});
     
-    // Sound Design State
-    const [soundDesignData, setSoundDesignData] = useState<Record<string, SoundDesignData>>({});
+    // Casting State
+    const [castingData, setCastingData] = useState<Record<string, CastingData>>({});
     const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
     const [isLoadingProgress, setIsLoadingProgress] = useState(true);
 
@@ -3477,8 +3333,8 @@ export default function App() {
             setAspectRatios={setAspectRatios}
             styles={styles}
             setStyles={setStyles}
-            soundDesignData={soundDesignData}
-            setSoundDesignData={setSoundDesignData}
+            castingData={castingData}
+            setCastingData={setCastingData}
             deleteTimelineItem={deleteTimelineItem}
             showCollaboration={false}
             setShowCollaboration={() => {}}
