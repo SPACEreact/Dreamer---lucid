@@ -9,7 +9,9 @@
   framework = "#custom"
   publish = "dist"
 
+# SPA fallback - only redirect if the file doesn't exist
 [[redirects]]
-  from = "/*"
-  to = "/index.html"
-  status = 200
+from = "/*"
+to = "/index.html"
+status = 200
+force = false
